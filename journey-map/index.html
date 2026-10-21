@@ -446,7 +446,7 @@ let stars;
 const terrainMat = new THREE.ShaderMaterial({
   uniforms: {
     ...uni, map: { value: null }, ibk: { value: null }, earth: { value: null }, hmap: { value: null },
-    det: { value: null }, detIdx: { value: null }, uDetAtlas: { value: new THREE.Vector2(32, 1) }, uDetOn: { value: 0 },
+    det: { value: null }, detIdx: { value: null }, detRel: { value: null }, uDetAtlas: { value: new THREE.Vector2(32, 1) }, uDetOn: { value: 0 },
     uBB: { value: new THREE.Vector4(BB.W, BB.E, BB.S, BB.N) }, uIB: { value: new THREE.Vector4(IB.W, IB.E, IB.S, IB.N) },
     uTexel: { value: new THREE.Vector2(1 / HW, 1 / HH) },
   },
@@ -459,7 +459,7 @@ const terrainMat = new THREE.ShaderMaterial({
       vPos=(modelMatrix*vec4(p,1.)).xyz; gl_Position=projectionMatrix*viewMatrix*vec4(vPos,1.);
     }`,
   fragmentShader: NOISE + LATLON + HAZE + `
-    uniform sampler2D map, ibk, earth, hmap, det, detIdx; uniform vec4 uBB, uIB; uniform vec3 uSun, uRegionSun; uniform vec2 uTexel, uDetAtlas;
+    uniform sampler2D map, ibk, earth, hmap, det, detIdx, detRel; uniform vec4 uBB, uIB; uniform vec3 uSun, uRegionSun; uniform vec2 uTexel, uDetAtlas;
     uniform float uAlt, uSnowLine, uFrost, uWinter, uDetOn;
     varying vec2 vUv; varying vec3 vPos; varying float vH;
     const vec2 GRID=vec2(${GRID[0]}.,${GRID[1]}.);
@@ -472,12 +472,34 @@ const terrainMat = new THREE.ShaderMaterial({
       float dx=(uBB.y-uBB.x)*111320.*cos(ll.x)*uTexel.x*2., dy=(uBB.w-uBB.z)*110570.*uTexel.y*2.;
       vec3 ne=normalize(vec3(-(hR-hL)/dx*${EXAG.toFixed(2)}, -(hU-hD)/dy*${EXAG.toFixed(2)}, 1.));
       float dist=length(cameraPosition-vPos);
+      // detail cell (10 m imagery + 27 m relief) under this fragment, feathered where the corridor ends
+      float detW=0.; vec2 dLi=vec2(0.), dSlot=vec2(0.);
+      if(uDetOn>.01 && dist<70.){
+        vec2 cf=vUv*GRID, c=floor(cf); vec4 ix=texture2D(detIdx,(c+.5)/GRID);
+        if(ix.b>.5){
+          vec2 l=fract(cf); float w=1.;
+          if(hasCell(c+vec2(-1.,0.))<.5) w*=smoothstep(0.,.45,l.x);
+          if(hasCell(c+vec2(1.,0.))<.5) w*=smoothstep(0.,.45,1.-l.x);
+          if(hasCell(c+vec2(0.,-1.))<.5) w*=smoothstep(0.,.45,l.y);
+          if(hasCell(c+vec2(0.,1.))<.5) w*=smoothstep(0.,.45,1.-l.y);
+          dLi=l; dSlot=floor(ix.rg*255.+.5);
+          detW=w*uDetOn*(1.-smoothstep(30.,65.,dist));
+        }
+      }
+      float fineH=0.;
+      if(detW>0.){
+        vec2 li=dLi*(46./48.)+1./48.;
+        vec3 rl=texture2D(detRel,vec2((dSlot.x+li.x)/uDetAtlas.x, 1.-(dSlot.y+1.-li.y)/uDetAtlas.y)).rgb;
+        vec2 nxy=rl.rg*2.-1.;
+        vec3 nd=vec3(nxy, sqrt(max(.02,1.-dot(nxy,nxy))));
+        ne=normalize(mix(ne,nd,detW)); fineH=(rl.b-.5)*510.*detW;
+      }
       // close up, add fine relief that the 150 m elevation grid can't carry: gullies, ribs and drifts
       float steep=1.-ne.z, near=1.-smoothstep(6.,30.,dist);
       if(near>0.){
         vec3 q=vec3(vUv*vec2(5200.,7800.),0.), e1=vec3(.35,0.,0.), e2=vec3(0.,.35,0.);
         float n0=vnoise(q)+.5*vnoise(q*2.1), nx=vnoise(q+e1)+.5*vnoise((q+e1)*2.1), ny=vnoise(q+e2)+.5*vnoise((q+e2)*2.1);
-        float amp=(.2+1.6*smoothstep(.05,.45,steep)*smoothstep(500.,1100.,vH))*near;
+        float amp=(.2+1.6*smoothstep(.05,.45,steep)*smoothstep(500.,1100.,vH))*near*(1.-.75*detW);
         ne=normalize(ne+vec3(-(nx-n0),-(ny-n0),0.)*amp*2.6);
       }
       vec3 N=normalize(east*ne.x+north*ne.y+up*ne.z);
@@ -490,20 +512,9 @@ const terrainMat = new THREE.ShaderMaterial({
         float w=smoothstep(0.,.08,min(min(iuv.x,1.-iuv.x),min(iuv.y,1.-iuv.y)));
         base=mix(base,texture2D(ibk,iuv).rgb,w);
       }
-      float detW=0.;
-      if(uDetOn>.01 && dist<70.){
-        vec2 cf=vUv*GRID, c=floor(cf); vec4 ix=texture2D(detIdx,(c+.5)/GRID);
-        if(ix.b>.5){
-          vec2 l=fract(cf); float w=1.;
-          if(hasCell(c+vec2(-1.,0.))<.5) w*=smoothstep(0.,.45,l.x);
-          if(hasCell(c+vec2(1.,0.))<.5) w*=smoothstep(0.,.45,1.-l.x);
-          if(hasCell(c+vec2(0.,-1.))<.5) w*=smoothstep(0.,.45,l.y);
-          if(hasCell(c+vec2(0.,1.))<.5) w*=smoothstep(0.,.45,1.-l.y);
-          vec2 li=l*(126./128.)+1./128., a=floor(ix.rg*255.+.5);
-          vec3 dc=texture2D(det,vec2((a.x+li.x)/uDetAtlas.x, 1.-(a.y+1.-li.y)/uDetAtlas.y)).rgb;
-          detW=w*uDetOn*(1.-smoothstep(30.,65.,dist));
-          base=mix(base,dc,detW);
-        }
+      if(detW>0.){
+        vec2 li=dLi*(126./128.)+1./128.;
+        base=mix(base,texture2D(det,vec2((dSlot.x+li.x)/uDetAtlas.x, 1.-(dSlot.y+1.-li.y)/uDetAtlas.y)).rgb,detW);
       }
       base*=1.75;
       float lum=dot(base,vec3(.2126,.7152,.0722));
@@ -512,7 +523,7 @@ const terrainMat = new THREE.ShaderMaterial({
       float nz=vnoise(vec3(vUv*vec2(300.,450.),1.))*.6+vnoise(vec3(vUv*vec2(1100.,1650.),2.))*.4;
       float nz2=vnoise(vec3(vUv*vec2(4200.,6300.),3.));
       float line=uSnowLine+(nz-.5)*520.;
-      float s=smoothstep(line-260.,line+260.,vH);
+      float s=smoothstep(line-260.,line+260.,vH+fineH);
       s*=mix(.22,1.,smoothstep(.6,.86,ne.z));
       float forest=1.-smoothstep(.035,.09,lum);
       s*=mix(1.,.28,forest*(1.-smoothstep(1650.,2050.,vH)));
@@ -536,8 +547,18 @@ const terrainMat = new THREE.ShaderMaterial({
 });
 let terrainMesh = null;
 const ribbonMeshes = [];
+let TNX = 2, TNY = 2;
+function meshKm(lat, lon) {
+  if (city) return terrainKm(lat, lon);
+  const fu = (lon - BB.W) / (BB.E - BB.W) * (TNX - 1), fv = (lat - BB.S) / (BB.N - BB.S) * (TNY - 1);
+  if (fu <= 0 || fv <= 0 || fu >= TNX - 1 || fv >= TNY - 1) return terrainKm(lat, lon);
+  const i = Math.floor(fu), j = Math.floor(fv), x = fu - i, y = fv - j;
+  const la = k => BB.S + (BB.N - BB.S) * k / (TNY - 1), lo = k => BB.W + (BB.E - BB.W) * k / (TNX - 1);
+  return lerp(lerp(terrainKm(la(j), lo(i)), terrainKm(la(j), lo(i + 1)), x), lerp(terrainKm(la(j + 1), lo(i)), terrainKm(la(j + 1), lo(i + 1)), x), y);
+}
 function buildTerrain() {
   const NX = phone() ? 440 : 720, NY = phone() ? 660 : 1080;
+  TNX = NX; TNY = NY;
   const pos = new Float32Array(NX * NY * 3), uv = new Float32Array(NX * NY * 2), v = new V3();
   for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
     const u = i / (NX - 1), w = j / (NY - 1), k = j * NX + i;
@@ -564,19 +585,21 @@ function buildTerrain() {
 const bldgMat = new THREE.ShaderMaterial({
   uniforms: { ...uni, uOrigin: { value: new V3() }, uFade: { value: 0 } },
   side: THREE.DoubleSide, transparent: true,
-  vertexShader: `attribute float aTint; attribute float aH; varying vec3 vL; varying float vTint, vH; uniform vec3 uOrigin;
-    void main(){ vL=position; vTint=aTint; vH=aH; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
-  fragmentShader: HAZE + `uniform vec3 uOrigin, uRegionSun; uniform float uWinter, uAlt, uFade; varying vec3 vL; varying float vTint, vH;
+  vertexShader: `attribute float aTint, aH, aRC, aWC; varying vec3 vL, vRC, vWC; varying float vTint, vH; uniform vec3 uOrigin;
+    vec3 c565(float c){ if(c<.5) return vec3(-1.); return pow(vec3(floor(c/2048.)/31., floor(mod(c,2048.)/32.)/63., mod(c,32.)/31.),vec3(2.2)); }
+    void main(){ vL=position; vTint=aTint; vH=aH; vRC=c565(aRC); vWC=c565(aWC); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader: HAZE + `uniform vec3 uOrigin, uRegionSun; uniform float uWinter, uAlt, uFade; varying vec3 vL, vRC, vWC; varying float vTint, vH;
     void main(){
       vec3 n=normalize(cross(dFdx(vL),dFdy(vL)));
       vec3 wp=vL+uOrigin, up=normalize(uOrigin), toCam=cameraPosition-wp;
       if(dot(n,toCam)<0.) n=-n;
       float t=fract(vTint), church=step(1.,vTint);
-      float roof=smoothstep(.3,.55,dot(n,up));
+      float roof=smoothstep(.25,.45,dot(n,up));
       vec3 wall=t<.25?vec3(.80,.74,.62):t<.42?vec3(.86,.84,.78):t<.58?vec3(.82,.66,.42):t<.72?vec3(.78,.56,.50):t<.86?vec3(.62,.68,.58):vec3(.70,.62,.55);
       vec3 rf=t<.5?vec3(.40,.17,.11):t<.78?vec3(.27,.23,.22):vec3(.46,.26,.17);
       if(church>.5){ wall=vec3(.92,.9,.85); rf=vec3(.33,.36,.38); }
-      rf=mix(rf,vec3(.88,.91,.95),uWinter*(.3+.3*fract(vTint*7.3)));
+      if(vWC.r>=0.) wall=mix(wall,vWC,.55); if(vRC.r>=0.) rf=mix(rf,vRC,.55);
+      rf=mix(rf,vec3(.9,.93,.97),uWinter*(.72+.22*fract(vTint*7.3))*smoothstep(.35,.6,dot(n,up)));
       vec3 col=mix(wall,rf,roof);
       float dif=max(dot(n,normalize(uRegionSun)),0.);
       col*=(.3+.72*dif)*mix(.5,1.,smoothstep(0.,.8,vH));
@@ -587,58 +610,179 @@ const bldgMat = new THREE.ShaderMaterial({
       gl_FragColor=vec4(col,a); gl_FragColor=linearToOutputTexel(gl_FragColor);
     }`,
 });
+// Footprints come in 0.5 m units with a roof type and ridge frame (from the minimum rotated rectangle).
+// Pitched roofs are cut into planar faces by clipping the footprint against each roof plane's region,
+// so gables, hips and pyramids follow the real outline; walls pick up the roof line at each break.
+const ROOF = { FLAT: 0, GABLE: 1, HIP: 2, PYRAMID: 3, DOME: 4, ONION: 5, SKILLION: 6, CONE: 7 };
+const PROFILES = {
+  [ROOF.DOME]: [[1, 0], [.97, .25], [.87, .5], [.7, .7], [.45, .87], [0, 1]],
+  [ROOF.ONION]: [[1, 0], [1.18, .2], [1.12, .4], [.75, .62], [.3, .8], [.1, .9], [0, 1]],
+  [ROOF.CONE]: [[1, 0], [0, 1]],
+};
+function clipHalf(poly, ax, ay, b) {      // keep the part of poly where ax*x + ay*y + b >= 0
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length];
+    const fp = ax * p[0] + ay * p[1] + b, fq = ax * q[0] + ay * q[1] + b;
+    if (fp >= 0) out.push(p);
+    if ((fp >= 0) !== (fq >= 0)) { const t = fp / (fp - fq); out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); }
+  }
+  return out;
+}
 function buildBuildings(buf, meta) {
-  const u = new Uint16Array(buf), s = new Int16Array(buf), N = u.length;
-  const pos = [], tint = [], hv = [], idx = [];
-  const origin = ground(meta.oy + 0.05, meta.ox + 0.05), tmp = new V3();
-  let i = 0, k = 0;
-  const xs = [], ys = [];
+  const u = new Uint16Array(buf), s16 = new Int16Array(buf), N = u.length;
+  const pos = [], tint = [], hv = [], rc = [], wc = [], idx = [];
+  const origin = ground(meta.oy + 0.05, meta.ox + 0.05), tmp = new V3(), skipSmall = phone();
+  let i = 0;
   while (i < N) {
-    const n = u[i], hd = u[i + 1], church = (hd & 0x4000) !== 0, h = (hd & 0x3fff) / 10;
-    let x = (u[i + 2] << 16) | u[i + 3], y = (u[i + 4] << 16) | u[i + 5];
-    i += 6; xs.length = 0; ys.length = 0; xs.push(x); ys.push(y);
-    for (let j = 1; j < n; j++) { x += s[i]; y += s[i + 1]; i += 2; xs.push(x); ys.push(y); }
+    const n = u[i], hM = u[i + 1] / 10, minH = u[i + 2] / 10, type = u[i + 3] & 255, flags = u[i + 3] >> 8;
+    let rh = u[i + 4] / 10;
+    const ang = u[i + 5] / 10 * D2R, ocx = s16[i + 6] / 2, ocy = s16[i + 7] / 2, L = u[i + 8] / 2, W = u[i + 9] / 2;
+    const roofC = u[i + 10], wallC = u[i + 11];
+    let x = (u[i + 12] << 16) | u[i + 13], y = (u[i + 14] << 16) | u[i + 15];
+    i += 16;
+    const ring = [[x / 2, y / 2]];
+    for (let j = 1; j < n; j++) { x += s16[i]; y += s16[i + 1]; i += 2; ring.push([x / 2, y / 2]); }
+    const church = flags & 1, part = flags & 2;
     let cx = 0, cy = 0, area = 0;
-    for (let j = 0; j < n; j++) { cx += xs[j]; cy += ys[j]; const j2 = (j + 1) % n; area += xs[j] * ys[j2] - xs[j2] * ys[j]; }
-    cx /= n; cy /= n; area = Math.abs(area) / 8;                          // 0.5 m units -> m²
-    const lonOf = xx => meta.ox + xx / 2 / meta.kx, latOf = yy => meta.oy + yy / 2 / meta.ky;
-    const clat = latOf(cy), clon = lonOf(cx), base = terrainKm(clat, clon);
-    const top = base + h * BHS / 1000, bot = base - 0.02;
-    let convex = true, sg = 0;
+    for (let j = 0; j < n; j++) { const a = ring[j], b = ring[(j + 1) % n]; cx += a[0]; cy += a[1]; area += a[0] * b[1] - b[0] * a[1]; }
+    cx /= n; cy /= n; area = Math.abs(area) / 2;
+    if (skipSmall && !part && area < 90) continue;
+    const lonOf = xx => meta.ox + xx / meta.kx, latOf = yy => meta.oy + yy / meta.ky;
+    const base = meshKm(latOf(cy), lonOf(cx));
+    // roof frame: v along the ridge, w across it, centred on the footprint's rectangle
+    const c0 = [ring[0][0] + ocx, ring[0][1] + ocy], ex = [Math.cos(ang), Math.sin(ang)], ey = [-ex[1], ex[0]];
+    const toV = p => (p[0] - c0[0]) * ex[0] + (p[1] - c0[1]) * ex[1], toW = p => (p[0] - c0[0]) * ey[0] + (p[1] - c0[1]) * ey[1];
+    let hw = Math.max(1, W / 2), hl = Math.max(hw, L / 2);
+    if (type === ROOF.PYRAMID) hl = hw = Math.max(hw, (hl + hw) / 2);
+    const pitched = type === ROOF.GABLE || type === ROOF.HIP || type === ROOF.PYRAMID || type === ROOF.SKILLION;
+    if (!pitched && type !== ROOF.DOME && type !== ROOF.ONION && type !== ROOF.CONE) rh = 0;
+    const eave = Math.max(minH + 2, hM - rh), d = hl - hw;
+    // roof planes: each region is convex (a list of half-planes in v/w) with a height function
+    const hp = (av, aw, b) => [av * ex[0] + aw * ey[0], av * ex[1] + aw * ey[1], b - av * (c0[0] * ex[0] + c0[1] * ex[1]) - aw * (c0[0] * ey[0] + c0[1] * ey[1])];
+    let regions;
+    if (type === ROOF.GABLE) regions = [
+      { cut: [hp(0, 1, 0)], z: p => eave + rh * (1 - toW(p) / hw) },
+      { cut: [hp(0, -1, 0)], z: p => eave + rh * (1 + toW(p) / hw) }];
+    else if (type === ROOF.HIP || type === ROOF.PYRAMID) regions = [
+      { cut: [hp(0, 1, 0), hp(-1, 1, d), hp(1, 1, d)], z: p => eave + rh * (1 - toW(p) / hw) },
+      { cut: [hp(0, -1, 0), hp(-1, -1, d), hp(1, -1, d)], z: p => eave + rh * (1 + toW(p) / hw) },
+      { cut: [hp(1, 0, 0), hp(1, -1, -d), hp(1, 1, -d)], z: p => eave + rh * (hl - toV(p)) / hw },
+      { cut: [hp(-1, 0, 0), hp(-1, -1, -d), hp(-1, 1, -d)], z: p => eave + rh * (hl + toV(p)) / hw }];
+    else if (type === ROOF.SKILLION) regions = [{ cut: [], z: p => eave + rh * (toW(p) + hw) / (2 * hw) }];
+    else regions = [{ cut: [], z: () => pitched ? eave : (rh ? eave : hM) }];
+    const roofZ = p => { let z = Infinity; for (const r of regions) { if (r.cut.every(([a, b, c]) => a * p[0] + b * p[1] + c >= -1e-6)) z = Math.min(z, r.z(p)); } return z === Infinity ? eave : z; };
+    // walls: break each edge where it crosses a roof region boundary so gable ends get their peak
+    const lines = regions.flatMap(r => r.cut);
+    const wallRing = [];
     for (let j = 0; j < n; j++) {
-      const a = j, b = (j + 1) % n, c = (j + 2) % n;
-      const cr = (xs[b] - xs[a]) * (ys[c] - ys[b]) - (ys[b] - ys[a]) * (xs[c] - xs[b]);
-      if (cr !== 0) { if (sg && Math.sign(cr) !== sg) { convex = false; break; } sg = Math.sign(cr); }
+      const a = ring[j], b = ring[(j + 1) % n], ts = [];
+      for (const [la, lb, lc] of lines) {
+        const fa = la * a[0] + lb * a[1] + lc, fb = la * b[0] + lb * b[1] + lc;
+        if ((fa > 0) !== (fb > 0) && Math.abs(fa - fb) > 1e-9) ts.push(fa / (fa - fb));
+      }
+      wallRing.push(a);
+      for (const t of ts.sort((p, q) => p - q)) if (t > .01 && t < .99) wallRing.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
     }
-    const roofH = clamp(Math.sqrt(area) * (church ? .45 : .24), 1.5, church ? 18 : 7) * BHS / 1000;
     const tv = church ? 1.5 : ((Math.sin(cx * 12.9898 + cy * 78.233) * 43758.5453) % 1 + 1) % 1;
-    const start = k;
-    for (let j = 0; j < n; j++) { llv(latOf(ys[j]), lonOf(xs[j]), bot, tmp).sub(origin); pos.push(tmp.x, tmp.y, tmp.z); tint.push(tv); hv.push(0); }
-    for (let j = 0; j < n; j++) { llv(latOf(ys[j]), lonOf(xs[j]), top, tmp).sub(origin); pos.push(tmp.x, tmp.y, tmp.z); tint.push(tv); hv.push(1); }
-    k += 2 * n;
-    for (let j = 0; j < n; j++) {
-      const j2 = (j + 1) % n, b0 = start + j, b1 = start + j2, t0 = start + n + j, t1 = start + n + j2;
-      idx.push(b0, b1, t1, b0, t1, t0);
+    const bot = part && minH > 0 ? minH : -20;
+    const put = (p, z, h) => {
+      llv(latOf(p[1]), lonOf(p[0]), base + z * BHS / 1000, tmp).sub(origin);
+      pos.push(tmp.x, tmp.y, tmp.z); tint.push(tv); hv.push(h); rc.push(roofC); wc.push(wallC);
+      return pos.length / 3 - 1;
+    };
+    const m = wallRing.length, b0 = pos.length / 3;
+    for (const p of wallRing) put(p, bot, 0);
+    for (const p of wallRing) put(p, roofZ(p), 1);
+    for (let j = 0; j < m; j++) { const j2 = (j + 1) % m; idx.push(b0 + j, b0 + j2, b0 + m + j2, b0 + j, b0 + m + j2, b0 + m + j); }
+    // roof faces
+    for (const r of regions) {
+      let poly = ring.slice();
+      for (const [a, b, c] of r.cut) { poly = clipHalf(poly, a, b, c); if (poly.length < 3) break; }
+      if (poly.length < 3) continue;
+      const pts = poly.map(p => new THREE.Vector2(p[0], p[1]));
+      const tris = THREE.ShapeUtils.triangulateShape(pts, []);
+      const s0 = pos.length / 3;
+      for (const p of poly) put(p, r.z(p), 1);
+      for (const t of tris) idx.push(s0 + t[0], s0 + t[1], s0 + t[2]);
     }
-    if (convex && n <= 8) {
-      llv(clat, clon, top + roofH, tmp).sub(origin); pos.push(tmp.x, tmp.y, tmp.z); tint.push(tv); hv.push(1);
-      const apex = k++;
-      for (let j = 0; j < n; j++) idx.push(start + n + j, start + n + (j + 1) % n, apex);
-    } else {
-      const pts = xs.map((xx, j) => new THREE.Vector2(xx, ys[j]));
-      for (const tri of THREE.ShapeUtils.triangulateShape(pts, [])) idx.push(start + n + tri[0], start + n + tri[1], start + n + tri[2]);
+    // domes, onions and spires sit on the eave as a turned profile
+    const prof = PROFILES[type];
+    if (prof && rh > 0) {
+      const R0 = Math.sqrt(area / Math.PI), seg = 14, s0 = pos.length / 3;
+      for (const [rr, zz] of prof) for (let k = 0; k < seg; k++) {
+        const a = k / seg * Math.PI * 2; put([cx + Math.cos(a) * R0 * rr, cy + Math.sin(a) * R0 * rr], eave + zz * rh, 1);
+      }
+      for (let q = 0; q < prof.length - 1; q++) for (let k = 0; k < seg; k++) {
+        const a = s0 + q * seg + k, b = s0 + q * seg + (k + 1) % seg;
+        idx.push(a, b, b + seg, a, b + seg, a + seg);
+      }
     }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('aTint', new THREE.Float32BufferAttribute(tint, 1));
   g.setAttribute('aH', new THREE.Float32BufferAttribute(hv, 1));
+  g.setAttribute('aRC', new THREE.Float32BufferAttribute(rc, 1));
+  g.setAttribute('aWC', new THREE.Float32BufferAttribute(wc, 1));
   g.setIndex(idx);
   const mat = bldgMat.clone();
   for (const key of Object.keys(uni)) mat.uniforms[key] = uni[key];
   mat.uniforms.uOrigin.value.copy(origin);
-  const m = new THREE.Mesh(g, mat); m.position.copy(origin); m.frustumCulled = false;
-  return m;
+  const mesh = new THREE.Mesh(g, mat); mesh.position.copy(origin); mesh.frustumCulled = false;
+  return mesh;
+}
+
+/* ---------- snowy conifers, chunked so whole patches drop out of view ---------- */
+const TREE_GREEN = new THREE.Color(0x1f3527);
+function treeGeometry() {
+  const parts = [[1.25, .9, .2], [.9, .75, .7]].map(([r, h, y]) => { const g = new THREE.ConeGeometry(r * .38, h, 7, 1, true); g.translate(0, y + h / 2, 0); return g.toNonIndexed(); });
+  const pos = [], nor = [], col = [], snow = new THREE.Color(0xf1f4f8), c = new THREE.Color();
+  for (const g of parts) {
+    const P = g.attributes.position.array, Nn = g.attributes.normal.array;
+    for (let k = 0; k < P.length; k += 3) {
+      pos.push(P[k], P[k + 1], P[k + 2]); nor.push(Nn[k], Nn[k + 1], Nn[k + 2]);
+      c.copy(TREE_GREEN).lerp(snow, clamp((Nn[k + 1] - .3) * 1.4, 0, .6) * (.45 + .55 * (P[k + 1] > 1.2)));
+      col.push(c.r, c.g, c.b);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  return g;
+}
+const treeGeo = treeGeometry();
+const treeMats = { winter: new THREE.MeshLambertMaterial({ vertexColors: true }), summer: new THREE.MeshLambertMaterial({ color: 0x2f5236 }) };
+function buildTrees(t) {
+  const bin = atob(t.data), b = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+  const n = t.n, xy = new Uint16Array(b.buffer, 0, n * 2), sz = new Uint8Array(b.buffer, n * 4, n);
+  const take = phone() ? Math.floor(n * .45) : n, blocks = new Map();
+  for (let i = 0; i < take; i++) {
+    const lon = t.ox + xy[i * 2] * 4 / t.kx, lat = t.oy + xy[i * 2 + 1] * 4 / t.ky;
+    const key = Math.floor((lon - BB.W) / .14) + ',' + Math.floor((lat - BB.S) / .093);
+    if (!blocks.has(key)) blocks.set(key, []);
+    blocks.get(key).push([lat, lon, sz[i] / 255]);
+  }
+  const group = new THREE.Group(), m = new THREE.Matrix4(), q = new THREE.Quaternion(), Y = new V3(0, 1, 0), p = new V3(), sc = new V3();
+  for (const list of blocks.values()) {
+    const c = ground(list[0][0], list[0][1]);
+    const mesh = new THREE.InstancedMesh(treeGeo, treeMats.winter, list.length);
+    list.forEach(([lat, lon, k], i) => {
+      llv(lat, lon, meshKm(lat, lon) - .004, p);
+      q.setFromUnitVectors(Y, p.clone().normalize());
+      const h = (.022 + .014 * k) * BHS; sc.set(h, h, h);
+      m.compose(p.sub(c), q, sc); mesh.setMatrixAt(i, m);
+    });
+    mesh.position.copy(c); mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere();
+    group.add(mesh);
+  }
+  return group;
+}
+function updateTrees(g) {
+  if (!g) return;
+  const mat = state.winter ? treeMats.winter : treeMats.summer;
+  for (const mesh of g.children) { mesh.visible = !city && camera.position.distanceTo(mesh.position) < 32; mesh.material = mat; }
 }
 
 /* ---------- landmark models (built in code; stand-ins for Blender .glb models) ---------- */
@@ -791,30 +935,32 @@ function buildLandmarks() {
 /* ---------- detail packs: 10 m imagery + buildings per leg, swapped behind the clouds ---------- */
 const packs = {}; let activePack = null;
 async function loadPack(name) {
-  const [atlas, idx, meta] = await Promise.all([
+  const [atlas, idx, meta, relief] = await Promise.all([
     loadTex(`assets/packs/${name}.jpg`), loadTex(`assets/packs/${name}-index.png`, false),
-    fetch(`assets/packs/${name}.json`).then(r => r.json()),
+    fetch(`assets/packs/${name}.json`).then(r => r.json()), loadTex(`assets/packs/${name}-relief.jpg`, false),
   ]);
   const bin = atob(meta.data), buf = new Uint8Array(bin.length);       // building footprints, little-endian uint16s
   for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
   idx.flipY = false; idx.magFilter = idx.minFilter = THREE.NearestFilter; idx.generateMipmaps = false; idx.needsUpdate = true;
-  const mesh = buildBuildings(buf.buffer, meta);
-  return { atlas, idx, rows: atlas.image.height / 128, mesh };
+  const mesh = buildBuildings(buf.buffer, meta), trees = meta.trees ? buildTrees(meta.trees) : null;
+  return { atlas, idx, relief, rows: atlas.image.height / 128, mesh, trees };
 }
 async function usePack(name) {
   if (!name || activePack === name) return;
   activePack = name;
   for (const [k, p] of Object.entries(packs)) {          // keep GPU memory low: drop other packs
     if (k === name) continue;
-    p.then(d => { d.atlas.dispose(); d.idx.dispose(); d.mesh.geometry.dispose(); scene.remove(d.mesh); }).catch(() => {});
+    p.then(d => { d.atlas.dispose(); d.idx.dispose(); d.relief.dispose(); d.mesh.geometry.dispose(); scene.remove(d.mesh); if (d.trees) { d.trees.children.forEach(t => t.dispose()); scene.remove(d.trees); } }).catch(() => {});
     delete packs[k];
   }
   packs[name] = packs[name] || loadPack(name);
   let d; try { d = await packs[name]; } catch (e) { console.warn('detail pack failed', name, e); return; }
   if (activePack !== name) return;
   const u = terrainMat.uniforms;
-  u.det.value = d.atlas; u.detIdx.value = d.idx; u.uDetAtlas.value.set(32, d.rows); u.uDetOn.value = 0;
+  u.det.value = d.atlas; u.detIdx.value = d.idx; u.detRel.value = d.relief; u.uDetAtlas.value.set(32, d.rows); u.uDetOn.value = 0;
   if (!d.mesh.parent) scene.add(d.mesh);
+  if (d.trees && !d.trees.parent) scene.add(d.trees);
+  state.trees = d.trees;
   d.mesh.material.uniforms.uFade.value = 0; state.packMesh = d.mesh;
 }
 
@@ -1767,6 +1913,7 @@ function resize() {
   if (photo.tiles) photo.tiles.setResolutionFromRenderer(camera, renderer);
 }
 addEventListener('resize', resize); resize();
+const sceneFog = new THREE.FogExp2(new THREE.Color().setRGB(.64, .73, .86, THREE.LinearSRGBColorSpace), .005);
 const bgSpace = new THREE.Color(0x03060c), bgSky = new THREE.Color(0x9fb4cc), bg = new THREE.Color(), snowWhite = new THREE.Color(0xf2f5f8);
 let last = performance.now(), winterV = 1;
 function frame(now) {
@@ -1786,6 +1933,8 @@ function frame(now) {
   const du = terrainMat.uniforms.uDetOn; if (terrainMat.uniforms.det.value) du.value = Math.min(1, du.value + dt * 1.5);
   if (state.packMesh) { const f = state.packMesh.material.uniforms.uFade; f.value = Math.min(1, f.value + dt * 1.2); }
   landmarkGroup.visible = !city && cam.dist < 60;
+  updateTrees(state.trees);
+  if (alt < 2500 && !city) { scene.fog = sceneFog; sceneFog.density = .75 / (90 + alt * 4); } else scene.fog = null;
   if (city && photo.tiles) { camera.updateMatrixWorld(); photo.tiles.update(); if ((clock.t * 4 | 0) % 4 === 0) updateCredit(); }
   cloudShell.material.uniforms.uOn.value = lerp(cloudShell.material.uniforms.uOn.value, state.clouds, .1);
   stars.material.opacity = smooth(300, 2500, alt);

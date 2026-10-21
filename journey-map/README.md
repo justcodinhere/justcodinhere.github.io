@@ -29,7 +29,16 @@ the file directly from disk won't load the map data).
 - Detail near the routes: 10 m/pixel Sentinel-2 imagery along every rail and
   road corridor and around each stop, loaded one leg at a time (`assets/packs`).
 - 3D buildings for every town the routes pass and the stop cities (Overture
-  Maps / OpenStreetMap footprints and heights), with snowy roofs in winter.
+  Maps / OpenStreetMap footprints and heights). Roofs follow the real shape
+  where it is tagged (gabled, hipped, pyramid, dome, onion, spire) and a
+  sensible default elsewhere, built along each building's ridge line; tower
+  and spire parts are drawn separately; tagged roof and wall colours are used.
+  Snow sits on the pitched roofs in winter.
+- 20 m terrain relief along the routes (Mapzen/AWS terrarium, zoom 13) baked
+  into per-leg relief maps, so ridges and gullies light correctly up close.
+- Snowy conifer forests: about 80,000 trees per leg, placed where the 10 m
+  imagery shows forest below the tree line, densest along the track and around
+  each stop.
 - Hand-built landmark models: Frauenkirche, Neues Rathaus, Alter Peter and
   St. Michael in Munich; Dom St. Jakob, Hofkirche, Goldenes Dachl and Bergisel
   in Innsbruck; Kaiserburg, St. Lorenz and the Frauenkirche in Nuremberg;
@@ -120,8 +129,8 @@ snapping). They expect a `data/` working folder and `rasterio`, `mgrs`,
 - Swap the code-built vehicles for Blender models: export `.glb` files and load
   them with three.js `GLTFLoader` in place of `makePlane`, `makeTrainCar` and
   `makeVan`.
-- A free alternative to Google for buildings: Bavaria publishes LoD2 building
-  models with real roof shapes as open data.
-- Sharper terrain: the elevation grid is 150 m; a finer grid along the Inn
-  valley and around Neuschwanstein would sharpen the ridgelines.
+- Free government data (needs these hosts allowed in the session's network
+  settings): Bavaria's LoD2 buildings with surveyed roofs, 40 cm aerial photos
+  (DOP40) and 1 m terrain; basemap.at aerial photos and Tyrol terrain for
+  Innsbruck.
 - Day-of-trip details on tap (hotel, Mass times, reservations).
