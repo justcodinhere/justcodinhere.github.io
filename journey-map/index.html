@@ -728,12 +728,14 @@ function buildLandmarks() {
 /* ---------- detail packs: 10 m imagery + buildings per leg, swapped behind the clouds ---------- */
 const packs = {}; let activePack = null;
 async function loadPack(name) {
-  const [atlas, idx, meta, buf] = await Promise.all([
+  const [atlas, idx, meta] = await Promise.all([
     loadTex(`assets/packs/${name}.jpg`), loadTex(`assets/packs/${name}-index.png`, false),
-    fetch(`assets/packs/${name}.json`).then(r => r.json()), fetch(`assets/packs/${name}.bin`).then(r => r.arrayBuffer()),
+    fetch(`assets/packs/${name}.json`).then(r => r.json()),
   ]);
+  const bin = atob(meta.data), buf = new Uint8Array(bin.length);       // building footprints, little-endian uint16s
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
   idx.flipY = false; idx.magFilter = idx.minFilter = THREE.NearestFilter; idx.generateMipmaps = false; idx.needsUpdate = true;
-  const mesh = buildBuildings(buf, meta);
+  const mesh = buildBuildings(buf.buffer, meta);
   return { atlas, idx, rows: atlas.image.height / 128, mesh };
 }
 async function usePack(name) {

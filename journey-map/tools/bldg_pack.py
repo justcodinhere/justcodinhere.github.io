@@ -55,7 +55,7 @@ for pk in packroute:
     for x,y in co[1:]:
       xi=int(round((x-ox)*2)); yi=int(round((y-oy)*2)); buf+=[(xi-px)&0xffff,(yi-py)&0xffff]; px,py=xi,yi
   arr=np.array(buf,dtype=np.int64)&0xffff
-  arr.astype('<u2').tofile(f'bpacks/{pk}.bin')
-  meta=dict(ox=ox/KX,oy=oy/KY,kx=KX,ky=KY,count=len(sel))
+  data=arr.astype('<u2').tobytes()
+  import base64; meta=dict(ox=ox/KX,oy=oy/KY,kx=KX,ky=KY,count=len(sel),data=base64.b64encode(data).decode())
   json.dump(meta,open(f'bpacks/{pk}.json','w'))
-  print(pk,len(sel),os.path.getsize(f'bpacks/{pk}.bin'))
+  print(pk,len(sel),len(data))
