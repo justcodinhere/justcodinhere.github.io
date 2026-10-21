@@ -348,6 +348,7 @@ const stage = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, phone() ? 2 : 1.75));
 renderer.autoClear = false;
+renderer.toneMapping = THREE.AgXToneMapping; renderer.toneMappingExposure = 1.12;
 stage.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, 1, 1, 1e5);
@@ -371,6 +372,13 @@ const LATLON = `
 const float PI=3.14159265;
 vec2 latlon(vec3 p){ vec3 n=normalize(p); return vec2(asin(n.y), atan(n.x,n.z)); }
 `;
+// Shared winter light, linear RGB: sky fill above, earth bounce below, a low warm sun.
+const SKY = [.62, .70, .82], EARTH = [.30, .28, .25], SUN = [1, .95, .88], AMB_K = .75, SUN_K = .62;
+const LIGHT = `
+vec3 winterLight(vec3 n, vec3 up, vec3 L){
+  vec3 amb=mix(vec3(${EARTH}),vec3(${SKY}),.5+.5*dot(n,up));
+  return amb*${AMB_K}+vec3(${SUN})*${SUN_K}*max(dot(n,L),0.);
+}`;
 const HAZE = `
 vec3 applyHaze(vec3 col, float dist, float alt){
   float fd=90.+alt*4.;
@@ -398,7 +406,9 @@ const globeMat = new THREE.ShaderMaterial({
       vec3 v=normalize(cameraPosition-vPos); vec3 h=normalize(v+L);
       col+= (1.-land)*vec3(.5,.6,.75)*pow(max(dot(n,h),0.),220.)*.18;
       col=applyHaze(col,length(cameraPosition-vPos),uAlt);
-      gl_FragColor=vec4(col,1.); gl_FragColor=linearToOutputTexel(gl_FragColor);
+      gl_FragColor=vec4(col,1.); 
+#include <tonemapping_fragment>
+      gl_FragColor=linearToOutputTexel(gl_FragColor);
     }`,
 });
 const globe = new THREE.Mesh(new THREE.SphereGeometry(R, 256, 128), globeMat);
@@ -410,7 +420,9 @@ const atmo = new THREE.Mesh(new THREE.SphereGeometry(R * 1.022, 128, 64), new TH
   fragmentShader: `uniform float uAlt; varying vec3 vN; varying vec3 vP;
     void main(){ float i=pow(clamp(.72+dot(vN,normalize(vP)),0.,1.),4.);
       float f=smoothstep(150.,1500.,uAlt);
-      gl_FragColor=vec4(vec3(.35,.6,1.)*i*1.6*f,1.); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
+      gl_FragColor=vec4(vec3(.35,.6,1.)*i*1.6*f,1.); 
+#include <tonemapping_fragment>
+      gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
 }));
 scene.add(atmo);
 
@@ -428,7 +440,9 @@ const cloudShell = new THREE.Mesh(new THREE.SphereGeometry(R + 9, 192, 96), new 
       float a=smoothstep(.5,.78,w*band+.18)*(.25+.75*clear);
       a*=smoothstep(250.,900.,uAlt)*uOn;
       float lit=.35+.75*max(dot(n,normalize(uSun)),0.);
-      gl_FragColor=vec4(vec3(1.)*lit,a*.85); gl_FragColor=linearToOutputTexel(gl_FragColor);
+      gl_FragColor=vec4(vec3(1.)*lit,a*.85); 
+#include <tonemapping_fragment>
+      gl_FragColor=linearToOutputTexel(gl_FragColor);
     }`,
 }));
 scene.add(cloudShell);
@@ -458,7 +472,7 @@ const terrainMat = new THREE.ShaderMaterial({
       vec3 p=normalize(position)*(${R.toFixed(1)}+h/1000.*${EXAG.toFixed(2)}*e+.002);
       vPos=(modelMatrix*vec4(p,1.)).xyz; gl_Position=projectionMatrix*viewMatrix*vec4(vPos,1.);
     }`,
-  fragmentShader: NOISE + LATLON + HAZE + `
+  fragmentShader: NOISE + LATLON + HAZE + LIGHT + `
     uniform sampler2D map, ibk, earth, hmap, det, detIdx, detRel; uniform vec4 uBB, uIB; uniform vec3 uSun, uRegionSun; uniform vec2 uTexel, uDetAtlas;
     uniform float uAlt, uSnowLine, uFrost, uWinter, uDetOn;
     varying vec2 vUv; varying vec3 vPos; varying float vH;
@@ -516,7 +530,7 @@ const terrainMat = new THREE.ShaderMaterial({
         vec2 li=dLi*(126./128.)+1./128.;
         base=mix(base,texture2D(det,vec2((dSlot.x+li.x)/uDetAtlas.x, 1.-(dSlot.y+1.-li.y)/uDetAtlas.y)).rgb,detW);
       }
-      base*=1.75;
+      base*=1.5;
       float lum=dot(base,vec3(.2126,.7152,.0722));
       base=mix(base,mix(vec3(lum),base,.62)*vec3(1.,.97,.95),uWinter);
 
@@ -532,8 +546,8 @@ const terrainMat = new THREE.ShaderMaterial({
       s*=mix(1.,.8+.4*nz2,detW*(1.-smoothstep(4.,18.,dist)));
       s=clamp(s,0.,1.)*uWinter;
 
-      vec3 gcol=base*(.52+.85*dif);
-      vec3 snow=mix(vec3(.42,.52,.72),vec3(1.,.985,.96),smoothstep(.0,.75,dif))*(.55+.6*dif);
+      vec3 gcol=base*(.74+.36*dif);
+      vec3 snow=vec3(.84,.87,.91)*winterLight(N,up,L);
       vec3 col=mix(gcol,snow,s);
 
       float e=smoothstep(0.,.1,min(min(vUv.x,1.-vUv.x),min(vUv.y,1.-vUv.y)));
@@ -542,12 +556,15 @@ const terrainMat = new THREE.ShaderMaterial({
       g*=(.18+1.05*max(dot(up,L),0.));
       col=mix(g,col,e);
       col=applyHaze(col,dist,uAlt);
-      gl_FragColor=vec4(col,1.); gl_FragColor=linearToOutputTexel(gl_FragColor);
+      gl_FragColor=vec4(col,1.); 
+#include <tonemapping_fragment>
+      gl_FragColor=linearToOutputTexel(gl_FragColor);
     }`,
 });
 let terrainMesh = null;
 const ribbonMeshes = [];
 let TNX = 2, TNY = 2;
+function inPatch() { const n = cam.target.clone().normalize(), la = Math.asin(n.y) / D2R, lo = Math.atan2(n.x, n.z) / D2R; return la > BB.S + .25 && la < BB.N - .25 && lo > BB.W + .35 && lo < BB.E - .35; }
 function meshKm(lat, lon) {
   if (city) return terrainKm(lat, lon);
   const fu = (lon - BB.W) / (BB.E - BB.W) * (TNX - 1), fv = (lat - BB.S) / (BB.N - BB.S) * (TNY - 1);
@@ -588,26 +605,28 @@ const bldgMat = new THREE.ShaderMaterial({
   vertexShader: `attribute float aTint, aH, aRC, aWC; varying vec3 vL, vRC, vWC; varying float vTint, vH; uniform vec3 uOrigin;
     vec3 c565(float c){ if(c<.5) return vec3(-1.); return pow(vec3(floor(c/2048.)/31., floor(mod(c,2048.)/32.)/63., mod(c,32.)/31.),vec3(2.2)); }
     void main(){ vL=position; vTint=aTint; vH=aH; vRC=c565(aRC); vWC=c565(aWC); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
-  fragmentShader: HAZE + `uniform vec3 uOrigin, uRegionSun; uniform float uWinter, uAlt, uFade; varying vec3 vL, vRC, vWC; varying float vTint, vH;
+  fragmentShader: HAZE + LIGHT + `uniform vec3 uOrigin, uRegionSun; uniform float uWinter, uAlt, uFade; varying vec3 vL, vRC, vWC; varying float vTint, vH;
     void main(){
       vec3 n=normalize(cross(dFdx(vL),dFdy(vL)));
       vec3 wp=vL+uOrigin, up=normalize(uOrigin), toCam=cameraPosition-wp;
       if(dot(n,toCam)<0.) n=-n;
       float t=fract(vTint), church=step(1.,vTint);
       float roof=smoothstep(.25,.45,dot(n,up));
-      vec3 wall=t<.25?vec3(.80,.74,.62):t<.42?vec3(.86,.84,.78):t<.58?vec3(.82,.66,.42):t<.72?vec3(.78,.56,.50):t<.86?vec3(.62,.68,.58):vec3(.70,.62,.55);
-      vec3 rf=t<.5?vec3(.40,.17,.11):t<.78?vec3(.27,.23,.22):vec3(.46,.26,.17);
-      if(church>.5){ wall=vec3(.92,.9,.85); rf=vec3(.33,.36,.38); }
-      if(vWC.r>=0.) wall=mix(wall,vWC,.55); if(vRC.r>=0.) rf=mix(rf,vRC,.55);
-      rf=mix(rf,vec3(.9,.93,.97),uWinter*(.72+.22*fract(vTint*7.3))*smoothstep(.35,.6,dot(n,up)));
+      vec3 wall=t<.25?vec3(.52,.45,.36):t<.42?vec3(.56,.53,.48):t<.58?vec3(.55,.42,.26):t<.72?vec3(.50,.36,.31):t<.86?vec3(.40,.43,.37):vec3(.47,.41,.35);
+      vec3 rf=t<.5?vec3(.27,.12,.08):t<.78?vec3(.16,.14,.13):vec3(.31,.17,.11);
+      if(church>.5){ wall=vec3(.66,.64,.60); rf=vec3(.18,.20,.21); }
+      if(vWC.r>=0.) wall=mix(wall,vWC*.7,.3); if(vRC.r>=0.) rf=mix(rf,vRC*.6,.3);
+      float patchy=.38+.42*fract(vTint*7.3)+.2*fract(vTint*31.7);
+      rf=mix(rf,vec3(.72,.75,.80),uWinter*patchy*smoothstep(.35,.6,dot(n,up)));
       vec3 col=mix(wall,rf,roof);
-      float dif=max(dot(n,normalize(uRegionSun)),0.);
-      col*=(.3+.72*dif)*mix(.5,1.,smoothstep(0.,.8,vH));
+      col*=winterLight(n,up,normalize(uRegionSun))*mix(.62,1.,smoothstep(0.,.8,vH));
       float d=length(toCam);
       col=applyHaze(col,d,uAlt);
       float a=uFade*(1.-smoothstep(28.,45.,d));
       if(a<.01) discard;
-      gl_FragColor=vec4(col,a); gl_FragColor=linearToOutputTexel(gl_FragColor);
+      gl_FragColor=vec4(col,a); 
+#include <tonemapping_fragment>
+      gl_FragColor=linearToOutputTexel(gl_FragColor);
     }`,
 });
 // Footprints come in 0.5 m units with a roof type and ridge frame (from the minimum rotated rectangle).
@@ -629,12 +648,14 @@ function clipHalf(poly, ax, ay, b) {      // keep the part of poly where ax*x + 
   }
   return out;
 }
-function buildBuildings(buf, meta) {
+async function buildBuildings(buf, meta) {
   const u = new Uint16Array(buf), s16 = new Int16Array(buf), N = u.length;
   const pos = [], tint = [], hv = [], rc = [], wc = [], idx = [];
   const origin = ground(meta.oy + 0.05, meta.ox + 0.05), tmp = new V3(), skipSmall = phone();
   let i = 0;
+  let slice = 0;
   while (i < N) {
+    if (++slice % 1200 === 0) await new Promise(r => setTimeout(r, 0));
     const n = u[i], hM = u[i + 1] / 10, minH = u[i + 2] / 10, type = u[i + 3] & 255, flags = u[i + 3] >> 8;
     let rh = u[i + 4] / 10;
     const ang = u[i + 5] / 10 * D2R, ocx = s16[i + 6] / 2, ocy = s16[i + 7] / 2, L = u[i + 8] / 2, W = u[i + 9] / 2;
@@ -734,15 +755,15 @@ function buildBuildings(buf, meta) {
 }
 
 /* ---------- snowy conifers, chunked so whole patches drop out of view ---------- */
-const TREE_GREEN = new THREE.Color(0x1f3527);
+const TREE_GREEN = new THREE.Color(0x2b4a32);
 function treeGeometry() {
   const parts = [[1.25, .9, .2], [.9, .75, .7]].map(([r, h, y]) => { const g = new THREE.ConeGeometry(r * .38, h, 7, 1, true); g.translate(0, y + h / 2, 0); return g.toNonIndexed(); });
-  const pos = [], nor = [], col = [], snow = new THREE.Color(0xf1f4f8), c = new THREE.Color();
+  const pos = [], nor = [], col = [], snow = new THREE.Color(0xdfe5ec), c = new THREE.Color();
   for (const g of parts) {
     const P = g.attributes.position.array, Nn = g.attributes.normal.array;
     for (let k = 0; k < P.length; k += 3) {
       pos.push(P[k], P[k + 1], P[k + 2]); nor.push(Nn[k], Nn[k + 1], Nn[k + 2]);
-      c.copy(TREE_GREEN).lerp(snow, clamp((Nn[k + 1] - .3) * 1.4, 0, .6) * (.45 + .55 * (P[k + 1] > 1.2)));
+      c.copy(TREE_GREEN).lerp(snow, clamp((Nn[k + 1] - .35) * 1.3, 0, .45) * (.35 + .65 * (P[k + 1] > 1.2)));
       col.push(c.r, c.g, c.b);
     }
   }
@@ -752,8 +773,8 @@ function treeGeometry() {
   return g;
 }
 const treeGeo = treeGeometry();
-const treeMats = { winter: new THREE.MeshLambertMaterial({ vertexColors: true }), summer: new THREE.MeshLambertMaterial({ color: 0x2f5236 }) };
-function buildTrees(t) {
+const treeMats = { winter: new THREE.MeshLambertMaterial({ vertexColors: true }), summer: new THREE.MeshLambertMaterial({ color: 0x33573a }) };
+async function buildTrees(t) {
   const bin = atob(t.data), b = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
   const n = t.n, xy = new Uint16Array(b.buffer, 0, n * 2), sz = new Uint8Array(b.buffer, n * 4, n);
@@ -766,6 +787,7 @@ function buildTrees(t) {
   }
   const group = new THREE.Group(), m = new THREE.Matrix4(), q = new THREE.Quaternion(), Y = new V3(0, 1, 0), p = new V3(), sc = new V3();
   for (const list of blocks.values()) {
+    await new Promise(r => setTimeout(r, 0));
     const c = ground(list[0][0], list[0][1]);
     const mesh = new THREE.InstancedMesh(treeGeo, treeMats.winter, list.length);
     list.forEach(([lat, lon, k], i) => {
@@ -782,7 +804,7 @@ function buildTrees(t) {
 function updateTrees(g) {
   if (!g) return;
   const mat = state.winter ? treeMats.winter : treeMats.summer;
-  for (const mesh of g.children) { mesh.visible = !city && camera.position.distanceTo(mesh.position) < 32; mesh.material = mat; }
+  for (const mesh of g.children) { mesh.visible = !city && camera.position.distanceTo(mesh.position) < 45; mesh.material = mat; }
 }
 
 /* ---------- landmark models (built in code; stand-ins for Blender .glb models) ---------- */
@@ -791,8 +813,9 @@ const roofMats = [];
 function lmat(name, color, o = {}) {
   if (!LMAT[name]) {
     const roof = o.roof; delete o.roof;
-    LMAT[name] = new THREE.MeshStandardMaterial({ color, roughness: .8, metalness: 0, ...o });
-    if (roof) roofMats.push({ m: LMAT[name], base: new THREE.Color(color) });
+    const c = new THREE.Color(color), hsl = {}; c.getHSL(hsl); c.setHSL(hsl.h, hsl.s * .6, hsl.l * .88);
+    LMAT[name] = new THREE.MeshLambertMaterial({ color: c, ...(o.emissive ? { emissive: o.emissive } : {}) });
+    if (roof) roofMats.push({ m: LMAT[name], base: LMAT[name].color.clone() });
   }
   return LMAT[name];
 }
@@ -860,7 +883,7 @@ const LM_BUILD = {
     const ramp = new THREE.Mesh(new THREE.BoxGeometry(4, 2, 105), c); ramp.position.set(0, 26, -52); ramp.rotation.x = -.62; g.add(ramp);
   },
   neuschwanstein(g) {
-    const lime = lmat('limestone', 0xeeece6), sl = lmat('slateBlue', 0x56616e, { roof: 1 }), ochre = lmat('ochreBrick', 0xc98f62);
+    const lime = lmat('limestone', 0xd9d5cc), sl = lmat('slateBlue', 0x56616e, { roof: 1 }), ochre = lmat('ochreBrick', 0xc98f62);
     K.box(g, 150, 60, 40, lmat('rock', 0x8a8478), 10, -60, 0);
     K.box(g, 62, 30, 18, lime, -18, 0, 0); K.gable(g, 62, 18, 14, sl, -18, 30);
     for (const z of [-9, 9]) { K.cyl(g, 3.4, 42, lime, -50, 0, z); K.cone(g, 4.2, 12, sl, -50, 42, z); }
@@ -942,7 +965,7 @@ async function loadPack(name) {
   const bin = atob(meta.data), buf = new Uint8Array(bin.length);       // building footprints, little-endian uint16s
   for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
   idx.flipY = false; idx.magFilter = idx.minFilter = THREE.NearestFilter; idx.generateMipmaps = false; idx.needsUpdate = true;
-  const mesh = buildBuildings(buf.buffer, meta), trees = meta.trees ? buildTrees(meta.trees) : null;
+  const mesh = await buildBuildings(buf.buffer, meta), trees = meta.trees ? await buildTrees(meta.trees) : null;
   return { atlas, idx, relief, rows: atlas.image.height / 128, mesh, trees };
 }
 async function usePack(name) {
@@ -1060,7 +1083,9 @@ function routeRibbon(path, color, dashed) {
         void main(){ if(vU>uReveal) discard;
           float a=uAlpha*(1.-smoothstep(.55,1.,abs(vSide)));
           ${dashed ? 'a*=.55+.45*step(.4,fract(vU/uTotal*90.-uTime*.6));' : ''}
-          gl_FragColor=vec4(uColor*(1.1-.35*abs(vSide)),a${xray ? '*.28' : ''}); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
+          gl_FragColor=vec4(uColor*(1.1-.35*abs(vSide)),a${xray ? '*.28' : ''}); 
+#include <tonemapping_fragment>
+      gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
     });
     const mesh = new THREE.Mesh(g, m); mesh.renderOrder = xray ? 3 : 2; mesh.frustumCulled = false;
     scene.add(mesh); mats.push(m); ribbonMeshes.push(mesh);
@@ -1076,9 +1101,11 @@ function riverRibbon(path, worldW) {
       void main(){
         float edge=1.-smoothstep(.45,1.,abs(vSide));
         float flow=vnoise(vec3(vU*1.6-uTime*.9, vSide*2., 0.))*.6+vnoise(vec3(vU*5.-uTime*2.6, vSide*5., 3.))*.4;
-        vec3 c=mix(vec3(.30,.62,.60),vec3(.85,.97,1.),smoothstep(.55,.85,flow)*.75);
-        float a=edge*.9*(1.-smoothstep(500.,1400.,uAlt));
-        gl_FragColor=vec4(c,a); gl_FragColor=linearToOutputTexel(gl_FragColor);
+        vec3 c=mix(vec3(.10,.20,.22),vec3(.42,.52,.58),smoothstep(.55,.85,flow)*.6);
+        float a=edge*.75*(1.-smoothstep(500.,1400.,uAlt));
+        gl_FragColor=vec4(c,a); 
+#include <tonemapping_fragment>
+      gl_FragColor=linearToOutputTexel(gl_FragColor);
       }`,
   });
   const mesh = new THREE.Mesh(ribbonGeom(path), m); mesh.renderOrder = 1; mesh.frustumCulled = false; scene.add(mesh); ribbonMeshes.push(mesh);
@@ -1135,8 +1162,9 @@ const plane = makePlane(), plane2 = makePlane(), van = makeVan();
 const train = new THREE.Group(); const cars = [makeTrainCar(true), makeTrainCar(false), makeTrainCar(false), makeTrainCar(false)];
 cars.forEach(c => train.add(c));
 [plane, plane2, van, train].forEach(o => { o.visible = false; scene.add(o); });
-scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x3a3328, 1.3));
-const keyLight = new THREE.DirectionalLight(0xffffff, 2.2); scene.add(keyLight); scene.add(keyLight.target);
+const lin = a => new THREE.Color().setRGB(a[0], a[1], a[2], THREE.LinearSRGBColorSpace);
+scene.add(new THREE.HemisphereLight(lin(SKY), lin(EARTH), Math.PI * AMB_K));
+const keyLight = new THREE.DirectionalLight(lin(SUN), Math.PI * SUN_K); scene.add(keyLight); scene.add(keyLight.target);
 
 const _m = new THREE.Matrix4(), _x = new V3(), _y = new V3(), _z = new V3();
 function placeObj(obj, pos, tan, scale, keepPitch) {
@@ -1207,7 +1235,9 @@ const veilMat = new THREE.ShaderMaterial({
       float n=a1*.6+a2*.4, th=mix(.75,.12,uCover);
       float a=smoothstep(th,th+.25,n)*smoothstep(0.,.25,uCover);
       vec3 c=mix(vec3(.70,.76,.86),vec3(1.,.99,.97),smoothstep(.3,.8,a2));
-      gl_FragColor=vec4(c,clamp(a*1.15,0.,1.)); gl_FragColor=linearToOutputTexel(gl_FragColor);
+      gl_FragColor=vec4(c,clamp(a*1.15,0.,1.)); 
+#include <tonemapping_fragment>
+      gl_FragColor=linearToOutputTexel(gl_FragColor);
     }`,
 });
 veilScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), veilMat));
@@ -1221,7 +1251,7 @@ function drawSnow(dt, amt) {
   sctx.fillStyle = `rgba(255,255,255,${.75 * amt})`;
   for (const f of flakes) {
     f.y += f.v * dt * (0.6 + f.r * .3); f.w += dt; if (f.y > 1.02) { f.y = -.02; f.x = Math.random(); }
-    sctx.beginPath(); sctx.arc((f.x + Math.sin(f.w) * .006) * w, f.y * h, f.r * devicePixelRatio * .7, 0, 6.283); sctx.fill();
+    sctx.beginPath(); sctx.arc((f.x + Math.sin(f.w) * .006) * w, f.y * h, f.r * Math.min(devicePixelRatio, 1.25) * .7, 0, 6.283); sctx.fill();
   }
 }
 
@@ -1700,7 +1730,7 @@ function buildJourney(geo, family = []) {
         want = lerpAngle(want, headingOf(pos, st.p.v.clone().sub(pos).normalize()), .55 * k);
         camTarget.copy(pos).lerp(st.p.v, .35 * k);
       } else camTarget.copy(pos);
-      hd = lerpAngle(hd, want, .05); look = lerp(look, k, .05);
+      hd = lerpAngle(hd, want, ease60(.05)); look = lerp(look, k, ease60(.05));
       cam.target.copy(camTarget); cam.heading = hd;
       cam.dist = (6.5 + 9 * Math.sin(Math.PI * f) * (1 - look)) * fitClose; cam.tilt = 64 - 6 * Math.sin(Math.PI * f);
       state.progress = base + f * ((o.roundTrip && last) ? .45 : .85) * (1 - base);
@@ -1908,16 +1938,30 @@ function resize() {
   const w = innerWidth, h = innerHeight; renderer.setSize(w, h); camera.aspect = w / h;
   uni.uRes.value.set(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
   uni.uFocal.value = uni.uRes.value.y / (2 * Math.tan(camera.fov * D2R / 2));
-  snowCv.width = w * devicePixelRatio; snowCv.height = h * devicePixelRatio;
+  snowCv.width = w * Math.min(devicePixelRatio, 1.25); snowCv.height = h * Math.min(devicePixelRatio, 1.25);
   viewKey = ''; updateViewOffset();
   if (photo.tiles) photo.tiles.setResolutionFromRenderer(camera, renderer);
 }
 addEventListener('resize', resize); resize();
 const sceneFog = new THREE.FogExp2(new THREE.Color().setRGB(.64, .73, .86, THREE.LinearSRGBColorSpace), .005);
-const bgSpace = new THREE.Color(0x03060c), bgSky = new THREE.Color(0x9fb4cc), bg = new THREE.Color(), snowWhite = new THREE.Color(0xf2f5f8);
+const bgSpace = new THREE.Color(0x03060c), bgSky = new THREE.Color(0xa9b9cb), bg = new THREE.Color(), snowWhite = new THREE.Color(0xd5dbe2);
 let last = performance.now(), winterV = 1;
+// Keep the frame rate up: drop the render resolution when frames run long, raise it again when there's headroom.
+let FDT = 1 / 60, dprNow = Math.min(devicePixelRatio, phone() ? 2 : 1.75), qT = 0, qN = 0, qSum = 0;
+const dprMax = dprNow, dprMin = Math.min(1, dprMax);
+function adaptQuality(now, dt) {
+  qSum += dt; qN++;
+  if (now - qT < 1500) return;
+  const avg = qSum / qN; qT = now; qSum = 0; qN = 0;
+  let next = dprNow;
+  if (avg > 1 / 40 && dprNow > dprMin) next = Math.max(dprMin, dprNow - .25);
+  else if (avg < 1 / 58 && dprNow < dprMax) next = Math.min(dprMax, dprNow + .125);
+  if (next !== dprNow && !DEBUG) { dprNow = next; renderer.setPixelRatio(dprNow); resize(); }
+}
+const ease60 = r => 1 - Math.pow(1 - r, FDT * 60);      // frame-rate independent smoothing
 function frame(now) {
-  const dt = Math.min(DEBUG ? 1 : .1, (now - last) / 1000); last = now;
+  const dt = Math.min(DEBUG ? 1 : .1, (now - last) / 1000); last = now; FDT = Math.min(dt, .05);
+  adaptQuality(now, dt);
   clock.t += dt * clock.speed;
   uni.uTime.value += dt * clock.speed;
   if (state.orbit) cam.heading += state.orbit * dt * 2.2 * clock.speed;
@@ -1929,7 +1973,7 @@ function frame(now) {
   keyLight.target.position.copy(cam.target);
   winterV = lerp(winterV, state.winter, .08);
   uni.uWinter.value = winterV; uni.uSnowLine.value = lerp(3400, 1300, winterV); uni.uFrost.value = .15 * winterV;
-  for (const r of roofMats) r.m.color.copy(r.base).lerp(snowWhite, .7 * winterV);
+  for (const r of roofMats) r.m.color.copy(r.base).lerp(snowWhite, .55 * winterV);
   const du = terrainMat.uniforms.uDetOn; if (terrainMat.uniforms.det.value) du.value = Math.min(1, du.value + dt * 1.5);
   if (state.packMesh) { const f = state.packMesh.material.uniforms.uFade; f.value = Math.min(1, f.value + dt * 1.2); }
   landmarkGroup.visible = !city && cam.dist < 60;
@@ -1937,6 +1981,7 @@ function frame(now) {
   if (alt < 2500 && !city) { scene.fog = sceneFog; sceneFog.density = .75 / (90 + alt * 4); } else scene.fog = null;
   if (city && photo.tiles) { camera.updateMatrixWorld(); photo.tiles.update(); if ((clock.t * 4 | 0) % 4 === 0) updateCredit(); }
   cloudShell.material.uniforms.uOn.value = lerp(cloudShell.material.uniforms.uOn.value, state.clouds, .1);
+  if (!city) { cloudShell.visible = alt > 200; atmo.visible = alt > 120; globe.visible = alt > 60 || !inPatch(); }
   stars.material.opacity = smooth(300, 2500, alt);
   bg.copy(bgSky).lerp(bgSpace, smooth(25, 900, alt)); renderer.setClearColor(bg);
   updateSprites(dt, alt);
