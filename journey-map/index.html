@@ -9,18 +9,17 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Mountains+of+Christmas:wght@700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
-  /* Layout: full-bleed 3D map; a journey card docks to the bottom, brand top-left, layer toggles top-right.
-     Single deliberate night-sky look (the map is always dark), palette borrowed from the itinerary's dark theme. */
+  /* Layout: full-bleed 3D map; a journey card docks to the bottom, brand top-left, layer toggles top-right,
+     waypoint stories float top-right (top, full width on phones). Single deliberate night-sky look. */
   :root {
     --night: #070D10;
-    --glass: rgba(14, 23, 18, 0.80);
+    --glass: rgba(14, 23, 18, 0.82);
     --glass-line: rgba(221, 187, 108, 0.22);
     --ink: #ECE8DC;
     --muted: #A7A08D;
     --gold: #DDBB6C;
     --red: #E2677A;
     --pine: #79C596;
-    --river: #7FD1C8;
     --font-fest: "Mountains of Christmas", Georgia, serif;
     --font-body: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -50,6 +49,19 @@
   .lbl.flip { flex-direction: row-reverse; }
   .lbl.minor { font-weight: 400; font-size: 11.5px; color: var(--muted); }
   .lbl.minor::before { width: 5px; height: 5px; background: var(--ink); }
+  .pin {
+    position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 6px; white-space: nowrap;
+    font-size: 11.5px; font-weight: 600; color: var(--ink); opacity: 0; transition: opacity .4s;
+    text-shadow: 0 1px 3px rgba(0,0,0,.95);
+  }
+  .pin i {
+    width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--gold); background: rgba(7,13,16,.6);
+    box-sizing: border-box; flex: 0 0 auto;
+  }
+  .pin span { display: none; }
+  .pin.on i { background: var(--gold); box-shadow: 0 0 0 0 rgba(221,187,108,.7); animation: ping 1.6s infinite; }
+  .pin.on span { display: inline; }
+  @keyframes ping { to { box-shadow: 0 0 0 14px rgba(221,187,108,0); } }
 
   .ui { position: fixed; z-index: 5; }
   .brand {
@@ -58,25 +70,37 @@
     pointer-events: none;
   }
   .brand h1 {
-    margin: 0; font-family: var(--font-fest); font-weight: 700; font-size: clamp(26px, 4.4vw, 40px);
+    margin: 0; font-family: var(--font-fest); font-weight: 700; font-size: clamp(24px, 4.2vw, 40px);
     line-height: 1; color: var(--ink); text-shadow: 0 2px 14px rgba(0,0,0,.7);
   }
   .brand p {
-    margin: 4px 0 0; font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .12em;
+    margin: 4px 0 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em;
     text-transform: uppercase; color: var(--gold); text-shadow: 0 1px 6px rgba(0,0,0,.8);
   }
   .layers {
     top: calc(env(safe-area-inset-top, 0px) + 14px);
     right: max(16px, env(safe-area-inset-right, 0px));
-    display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 46vw;
+    display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;
   }
   .chip {
     font: 600 12.5px/1 var(--font-body); color: var(--muted); background: var(--glass);
     border: 1px solid var(--glass-line); border-radius: 999px; padding: 8px 12px; cursor: pointer;
-    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); white-space: nowrap;
   }
   .chip[aria-pressed="true"] { color: var(--night); background: var(--gold); border-color: var(--gold); }
   .chip:focus-visible, .btn:focus-visible, .dot:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .poi {
+    top: calc(env(safe-area-inset-top, 0px) + 62px); right: max(16px, env(safe-area-inset-right, 0px));
+    width: min(340px, calc(100vw - 32px)); background: var(--glass); border: 1px solid var(--glass-line);
+    border-radius: 14px; padding: 12px 14px; display: grid; gap: 4px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 14px 40px rgba(0,0,0,.45);
+    transition: opacity .4s, transform .4s; opacity: 0; transform: translateY(-6px); pointer-events: none;
+  }
+  .poi.show { opacity: 1; transform: none; }
+  .poi .side { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); }
+  .poi strong { font-size: 16px; line-height: 1.25; text-wrap: balance; }
+  .poi p { margin: 0; font-size: 13.5px; color: var(--ink); opacity: .88; }
 
   .dock {
     left: 0; right: 0; bottom: 0;
@@ -91,6 +115,7 @@
     backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
     box-shadow: 0 18px 50px rgba(0,0,0,.45); display: grid; gap: 10px;
   }
+  .card > * { min-width: 0; }
   .card-head { display: flex; gap: 12px; align-items: flex-start; }
   .mode {
     flex: 0 0 auto; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
@@ -111,23 +136,23 @@
   .dots { display: flex; gap: 5px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
   .dot {
     width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--glass-line); background: transparent;
-    color: var(--muted); font: 500 10.5px/1 var(--font-mono); cursor: pointer; padding: 0;
+    color: var(--muted); font: 500 10.5px/1 var(--font-mono); cursor: pointer; padding: 0; flex: 0 0 auto;
   }
   .dot.done { background: rgba(221,187,108,.14); color: var(--ink); }
   .dot[aria-current="step"] { background: var(--gold); color: var(--night); border-color: var(--gold); }
   .btn {
-    white-space: nowrap;
-    font: 700 13.5px/1 var(--font-body); border-radius: 10px; padding: 10px 14px; cursor: pointer;
+    white-space: nowrap; font: 700 13.5px/1 var(--font-body); border-radius: 10px; padding: 10px 14px; cursor: pointer;
     border: 1px solid var(--glass-line); background: transparent; color: var(--ink);
   }
   .btn.primary { background: var(--gold); color: var(--night); border-color: var(--gold); }
   .btn:disabled { opacity: .35; cursor: default; }
+  .btn.icon { padding: 10px 12px; }
 
   #loading {
     position: fixed; inset: 0; z-index: 9; display: grid; place-items: center; background: var(--night);
     transition: opacity .8s;
   }
-  #loading div { text-align: center; display: grid; gap: 8px; }
+  #loading div { text-align: center; display: grid; gap: 8px; padding-inline: 16px; }
   #loading strong { font-family: var(--font-fest); font-size: 34px; }
   #loading span { font-family: var(--font-mono); font-size: 12px; color: var(--muted); letter-spacing: .08em; }
   #loading.gone { opacity: 0; pointer-events: none; }
@@ -136,13 +161,25 @@
     bottom: calc(env(safe-area-inset-bottom, 0px) + 2px); right: max(8px, env(safe-area-inset-right, 0px));
     font-size: 9.5px; color: rgba(236,232,220,.42); pointer-events: none;
   }
-  @media (max-width: 560px) {
-    .title { font-size: 17px; }
-    .note { font-size: 13.5px; }
-    .layers { max-width: 34vw; flex-direction: column; align-items: flex-end; }
+  @media (max-width: 640px) {
+    .brand h1 { font-size: 24px; }
+    .brand p { font-size: 10px; }
     .brand { max-width: calc(100vw - 150px); }
-    .brand h1 { font-size: 26px; }
-    .chip { padding: 7px 10px; font-size: 12px; }
+    .layers { flex-direction: column; align-items: flex-end; }
+    .chip { padding: 7px 10px; font-size: 11.5px; }
+    .poi { left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+           width: auto; top: calc(env(safe-area-inset-top, 0px) + 118px); padding: 10px 12px; }
+    .poi strong { font-size: 15px; }
+    .poi p { font-size: 13px; }
+    .card { padding: 12px 12px 10px; gap: 8px; }
+    .title { font-size: 16.5px; }
+    .meta { font-size: 11px; }
+    .note { font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .mode { width: 34px; height: 34px; }
+    .controls { flex-wrap: wrap; row-gap: 8px; }
+    .dots { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-block: 1px; }
+    #pause { margin-left: auto; }
+    .dots::-webkit-scrollbar { display: none; }
     .credit { display: none; }
   }
 </style>
@@ -153,7 +190,7 @@
 <canvas id="snow"></canvas>
 <div id="labels"></div>
 
-<header class="ui brand">
+<header class="ui brand" id="brand">
   <h1>Searl Family Christmas</h1>
   <p>Journey &middot; Dec 20&ndash;29, 2026</p>
 </header>
@@ -161,9 +198,16 @@
 <div class="ui layers" role="group" aria-label="Map layers">
   <button class="chip" id="tWinter" aria-pressed="true">Winter snow</button>
   <button class="chip" id="tClouds" aria-pressed="true">Clouds</button>
+  <button class="chip" id="tStories" aria-pressed="true">Stories</button>
 </div>
 
-<div class="ui dock">
+<aside class="ui poi" id="poi" aria-live="polite">
+  <span class="side" id="poiSide"></span>
+  <strong id="poiTitle"></strong>
+  <p id="poiText"></p>
+</aside>
+
+<div class="ui dock" id="dock">
   <section class="card" aria-live="polite">
     <div class="card-head">
       <div class="mode" id="mode"></div>
@@ -177,12 +221,13 @@
     <div class="bar"><i id="prog"></i></div>
     <div class="controls">
       <div class="dots" id="dots"></div>
-      <button class="btn" id="prev" aria-label="Previous leg">&larr;</button>
+      <button class="btn icon" id="pause" aria-label="Pause">&#10074;&#10074;</button>
+      <button class="btn icon" id="prev" aria-label="Previous leg">&larr;</button>
       <button class="btn primary" id="next">Next leg &rarr;</button>
     </div>
   </section>
 </div>
-<div class="ui credit">Imagery: Copernicus Sentinel-2 &middot; Elevation: Mapzen/AWS Terrain Tiles &middot; Globe: NASA Blue Marble &middot; Lines: Natural Earth</div>
+<div class="ui credit">Imagery: contains modified Copernicus Sentinel-2 data &middot; Elevation: Mapzen/AWS Terrain Tiles &middot; Buildings: Overture Maps / OpenStreetMap &middot; Globe: NASA Blue Marble &middot; Lines: Natural Earth</div>
 
 <div id="loading"><div><strong>Packing the sleigh&hellip;</strong><span id="loadmsg">Loading globe</span></div></div>
 
@@ -193,11 +238,15 @@
 const V3 = THREE.Vector3;
 const R = 6371;                     // world units are kilometres
 const D2R = Math.PI / 180;
-const EXAG = 1.6;                   // vertical exaggeration for the Alps
+const EXAG = 1.6;                   // vertical exaggeration for the terrain
+const BHS = 1.3;                    // building height scale
 const BB = { W: 9.9, E: 12.5, S: 46.9, N: 49.7 };          // detailed terrain patch
-const IB = { W: 11.0, E: 11.8, S: 47.15, N: 47.45 };       // high-res Innsbruck inset
+const IB = { W: 11.0, E: 11.8, S: 47.15, N: 47.45 };       // 30 m Innsbruck inset
 const HW = 1280, HH = 1920;                                // height grid size
+const GRID = [150, 240];                                   // 10 m detail-tile grid over BB
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const phone = () => innerWidth < 640;
+const DEBUG = /debug/.test(location.search);
 
 /* ---------- geo helpers ---------- */
 function llv(lat, lon, h = 0, o = new V3()) {
@@ -214,7 +263,7 @@ const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-function lerpAngle(a, b, t) { let d = ((b - a + 540) % 360) - 180; return a + d * t; }
+function lerpAngle(a, b, t) { const d = ((b - a + 540) % 360) - 180; return a + d * t; }
 
 /* ---------- height field (filled after load) ---------- */
 let HF = null;
@@ -236,7 +285,7 @@ function ground(lat, lon, lift = 0) { return llv(lat, lon, terrainKm(lat, lon) +
 /* ---------- renderer / scene ---------- */
 const stage = document.getElementById('stage');
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.setPixelRatio(Math.min(devicePixelRatio, phone() ? 2 : 1.75));
 renderer.autoClear = false;
 stage.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
@@ -246,6 +295,7 @@ const uni = {
   uTime: { value: 0 }, uSun: { value: new V3(1, 0, 0) }, uAlt: { value: 10000 },
   uRes: { value: new THREE.Vector2(1, 1) }, uFocal: { value: 1 },
   uSnowLine: { value: 1300 }, uFrost: { value: 0.15 }, uWinter: { value: 1 },
+  uRegionSun: { value: new V3(0, 1, 0) },
 };
 
 /* ---------- GLSL bits ---------- */
@@ -260,13 +310,18 @@ const LATLON = `
 const float PI=3.14159265;
 vec2 latlon(vec3 p){ vec3 n=normalize(p); return vec2(asin(n.y), atan(n.x,n.z)); }
 `;
+const HAZE = `
+vec3 applyHaze(vec3 col, float dist, float alt){
+  float fd=90.+alt*4.;
+  return mix(col,vec3(.64,.73,.86),(1.-exp(-dist/fd))*.6*(1.-smoothstep(600.,2500.,alt)));
+}`;
 
 /* ---------- globe ---------- */
 const tex = {};
 const globeMat = new THREE.ShaderMaterial({
-  uniforms: { ...uni, map: { value: null }, uRegionSun: { value: new V3(0, 1, 0) }, uBB: { value: new THREE.Vector4(BB.W, BB.E, BB.S, BB.N) } },
+  uniforms: { ...uni, map: { value: null }, uBB: { value: new THREE.Vector4(BB.W, BB.E, BB.S, BB.N) } },
   vertexShader: `varying vec3 vPos; void main(){ vPos=(modelMatrix*vec4(position,1.)).xyz; gl_Position=projectionMatrix*viewMatrix*vec4(vPos,1.); }`,
-  fragmentShader: LATLON + `
+  fragmentShader: LATLON + HAZE + `
     uniform sampler2D map; uniform vec3 uSun, uRegionSun; uniform vec4 uBB; uniform float uWinter, uAlt; varying vec3 vPos;
     void main(){
       vec2 ll=latlon(vPos); float lat=ll.x*180./PI, lon=ll.y*180./PI;
@@ -281,8 +336,7 @@ const globeMat = new THREE.ShaderMaterial({
       vec3 col=c*(.18+1.05*d);
       vec3 v=normalize(cameraPosition-vPos); vec3 h=normalize(v+L);
       col+= (1.-land)*vec3(.5,.6,.75)*pow(max(dot(n,h),0.),220.)*.18;
-      float fd=90.+uAlt*4.;
-      col=mix(col,vec3(.64,.73,.86),(1.-exp(-length(cameraPosition-vPos)/fd))*.6*(1.-smoothstep(600.,2500.,uAlt)));
+      col=applyHaze(col,length(cameraPosition-vPos),uAlt);
       gl_FragColor=vec4(col,1.); gl_FragColor=linearToOutputTexel(gl_FragColor);
     }`,
 });
@@ -308,7 +362,6 @@ const cloudShell = new THREE.Mesh(new THREE.SphereGeometry(R + 9, 192, 96), new 
       vec3 q=n*5.+vec3(uTime*.004,0.,uTime*.002);
       float w=fbm(q*1.0+fbm(q*2.)*1.2);
       float band=.55+.25*sin(ll.x*3.);
-      // keep the sky over Bavaria & Tyrol fairly clear for the show
       vec2 d=vec2((ll.y*180./PI-11.2)*.67,(ll.x*180./PI-48.2));
       float clear=smoothstep(2.5,7.,length(d));
       float a=smoothstep(.5,.78,w*band+.18)*(.25+.75*clear);
@@ -319,21 +372,22 @@ const cloudShell = new THREE.Mesh(new THREE.SphereGeometry(R + 9, 192, 96), new 
 }));
 scene.add(cloudShell);
 
-// stars
+let stars;
 {
   const g = new THREE.BufferGeometry(), n = 2500, p = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) { const v = new V3().randomDirection().multiplyScalar(60000); p.set([v.x, v.y, v.z], i * 3); }
   g.setAttribute('position', new THREE.BufferAttribute(p, 3));
-  var stars = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xcfd8ff, size: 1.6, sizeAttenuation: false, transparent: true, depthWrite: false }));
+  stars = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xcfd8ff, size: 1.6, sizeAttenuation: false, transparent: true, depthWrite: false }));
   stars.frustumCulled = false; scene.add(stars);
 }
 
-/* ---------- regional terrain ---------- */
+/* ---------- regional terrain (+ 10 m detail tiles near the routes) ---------- */
 const terrainMat = new THREE.ShaderMaterial({
   uniforms: {
     ...uni, map: { value: null }, ibk: { value: null }, earth: { value: null }, hmap: { value: null },
+    det: { value: null }, detIdx: { value: null }, uDetAtlas: { value: new THREE.Vector2(32, 1) }, uDetOn: { value: 0 },
     uBB: { value: new THREE.Vector4(BB.W, BB.E, BB.S, BB.N) }, uIB: { value: new THREE.Vector4(IB.W, IB.E, IB.S, IB.N) },
-    uRegionSun: { value: new V3() }, uTexel: { value: new THREE.Vector2(1 / HW, 1 / HH) },
+    uTexel: { value: new THREE.Vector2(1 / HW, 1 / HH) },
   },
   vertexShader: `
     uniform sampler2D hmap; varying vec2 vUv; varying vec3 vPos; varying float vH;
@@ -343,18 +397,28 @@ const terrainMat = new THREE.ShaderMaterial({
       vec3 p=normalize(position)*(${R.toFixed(1)}+h/1000.*${EXAG.toFixed(2)}*e+.002);
       vPos=(modelMatrix*vec4(p,1.)).xyz; gl_Position=projectionMatrix*viewMatrix*vec4(vPos,1.);
     }`,
-  fragmentShader: NOISE + LATLON + `
-    uniform sampler2D map, ibk, earth, hmap; uniform vec4 uBB, uIB; uniform vec3 uSun, uRegionSun; uniform vec2 uTexel;
-    uniform float uAlt, uSnowLine, uFrost, uWinter;
+  fragmentShader: NOISE + LATLON + HAZE + `
+    uniform sampler2D map, ibk, earth, hmap, det, detIdx; uniform vec4 uBB, uIB; uniform vec3 uSun, uRegionSun; uniform vec2 uTexel, uDetAtlas;
+    uniform float uAlt, uSnowLine, uFrost, uWinter, uDetOn;
     varying vec2 vUv; varying vec3 vPos; varying float vH;
+    const vec2 GRID=vec2(${GRID[0]}.,${GRID[1]}.);
+    float hasCell(vec2 c){ return texture2D(detIdx,(c+.5)/GRID).b; }
     void main(){
       vec2 ll=latlon(vPos); float lat=ll.x*180./PI, lon=ll.y*180./PI;
       vec3 up=normalize(vPos), east=normalize(vec3(up.z,0.,-up.x)), north=cross(up,east);
-      // normal from the height map (exaggerated)
       float hL=texture2D(hmap,vUv-vec2(uTexel.x,0.)).r, hR=texture2D(hmap,vUv+vec2(uTexel.x,0.)).r;
       float hD=texture2D(hmap,vUv-vec2(0.,uTexel.y)).r, hU=texture2D(hmap,vUv+vec2(0.,uTexel.y)).r;
       float dx=(uBB.y-uBB.x)*111320.*cos(ll.x)*uTexel.x*2., dy=(uBB.w-uBB.z)*110570.*uTexel.y*2.;
       vec3 ne=normalize(vec3(-(hR-hL)/dx*${EXAG.toFixed(2)}, -(hU-hD)/dy*${EXAG.toFixed(2)}, 1.));
+      float dist=length(cameraPosition-vPos);
+      // close up, add fine relief that the 150 m elevation grid can't carry: gullies, ribs and drifts
+      float steep=1.-ne.z, near=1.-smoothstep(6.,30.,dist);
+      if(near>0.){
+        vec3 q=vec3(vUv*vec2(5200.,7800.),0.), e1=vec3(.35,0.,0.), e2=vec3(0.,.35,0.);
+        float n0=vnoise(q)+.5*vnoise(q*2.1), nx=vnoise(q+e1)+.5*vnoise((q+e1)*2.1), ny=vnoise(q+e2)+.5*vnoise((q+e2)*2.1);
+        float amp=(.2+1.6*smoothstep(.05,.45,steep)*smoothstep(500.,1100.,vH))*near;
+        ne=normalize(ne+vec3(-(nx-n0),-(ny-n0),0.)*amp*2.6);
+      }
       vec3 N=normalize(east*ne.x+north*ne.y+up*ne.z);
       vec3 L=normalize(mix(uRegionSun,normalize(uSun),smoothstep(400.,2500.,uAlt)));
       float dif=max(dot(N,L),0.);
@@ -365,45 +429,57 @@ const terrainMat = new THREE.ShaderMaterial({
         float w=smoothstep(0.,.08,min(min(iuv.x,1.-iuv.x),min(iuv.y,1.-iuv.y)));
         base=mix(base,texture2D(ibk,iuv).rgb,w);
       }
+      float detW=0.;
+      if(uDetOn>.01 && dist<70.){
+        vec2 cf=vUv*GRID, c=floor(cf); vec4 ix=texture2D(detIdx,(c+.5)/GRID);
+        if(ix.b>.5){
+          vec2 l=fract(cf); float w=1.;
+          if(hasCell(c+vec2(-1.,0.))<.5) w*=smoothstep(0.,.45,l.x);
+          if(hasCell(c+vec2(1.,0.))<.5) w*=smoothstep(0.,.45,1.-l.x);
+          if(hasCell(c+vec2(0.,-1.))<.5) w*=smoothstep(0.,.45,l.y);
+          if(hasCell(c+vec2(0.,1.))<.5) w*=smoothstep(0.,.45,1.-l.y);
+          vec2 li=l*(126./128.)+1./128., a=floor(ix.rg*255.+.5);
+          vec3 dc=texture2D(det,vec2((a.x+li.x)/uDetAtlas.x, 1.-(a.y+1.-li.y)/uDetAtlas.y)).rgb;
+          detW=w*uDetOn*(1.-smoothstep(30.,65.,dist));
+          base=mix(base,dc,detW);
+        }
+      }
       base*=1.75;
       float lum=dot(base,vec3(.2126,.7152,.0722));
-      base=mix(base,mix(vec3(lum),base,.62)*vec3(1.,.97,.95),uWinter);   // dormant winter tones
+      base=mix(base,mix(vec3(lum),base,.62)*vec3(1.,.97,.95),uWinter);
 
-      // snow: elevation + noise, thinned on cliffs and under forest
       float nz=vnoise(vec3(vUv*vec2(300.,450.),1.))*.6+vnoise(vec3(vUv*vec2(1100.,1650.),2.))*.4;
+      float nz2=vnoise(vec3(vUv*vec2(4200.,6300.),3.));
       float line=uSnowLine+(nz-.5)*520.;
       float s=smoothstep(line-260.,line+260.,vH);
       s*=mix(.22,1.,smoothstep(.6,.86,ne.z));
       float forest=1.-smoothstep(.035,.09,lum);
       s*=mix(1.,.28,forest*(1.-smoothstep(1650.,2050.,vH)));
       s=max(s,uFrost*(.35+.65*nz)*(1.-forest*.75)*smoothstep(.6,.9,ne.z));
-      s*=uWinter;
+      // close up, break the snow into drifts and let tree crowns show through
+      s*=mix(1.,.8+.4*nz2,detW*(1.-smoothstep(4.,18.,dist)));
+      s=clamp(s,0.,1.)*uWinter;
 
-      vec3 ground=base*(.52+.85*dif);
+      vec3 gcol=base*(.52+.85*dif);
       vec3 snow=mix(vec3(.42,.52,.72),vec3(1.,.985,.96),smoothstep(.0,.75,dif))*(.55+.6*dif);
-      vec3 col=mix(ground,snow,s);
+      vec3 col=mix(gcol,snow,s);
 
-      // seamless hand-off to the globe at the patch edges
       float e=smoothstep(0.,.1,min(min(vUv.x,1.-vUv.x),min(vUv.y,1.-vUv.y)));
       vec3 g=texture2D(earth,vec2(ll.y/(2.*PI)+.5,ll.x/PI+.5)).rgb;
       float gl=dot(g,vec3(.2126,.7152,.0722)); g=mix(g,mix(vec3(gl),g,.62)*vec3(1.,.97,.95),uWinter);
       g*=(.18+1.05*max(dot(up,L),0.));
       col=mix(g,col,e);
-
-      // aerial perspective
-      float dist=length(cameraPosition-vPos);
-      float fd=90.+uAlt*4.;
-      vec3 haze=vec3(.64,.73,.86);
-      col=mix(col,haze,(1.-exp(-dist/fd))*.6*(1.-smoothstep(600.,2500.,uAlt)));
+      col=applyHaze(col,dist,uAlt);
       gl_FragColor=vec4(col,1.); gl_FragColor=linearToOutputTexel(gl_FragColor);
     }`,
 });
 function buildTerrain() {
-  const NX = 480, NY = 720, pos = new Float32Array(NX * NY * 3), uv = new Float32Array(NX * NY * 2), v = new V3();
+  const NX = phone() ? 440 : 720, NY = phone() ? 660 : 1080;
+  const pos = new Float32Array(NX * NY * 3), uv = new Float32Array(NX * NY * 2), v = new V3();
   for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
     const u = i / (NX - 1), w = j / (NY - 1), k = j * NX + i;
     llv(lerp(BB.S, BB.N, w), lerp(BB.W, BB.E, u), 0, v);
-    pos.set([v.x, v.y, v.z], k * 3); uv.set([u, w], k * 2);
+    pos[k * 3] = v.x; pos[k * 3 + 1] = v.y; pos[k * 3 + 2] = v.z; uv[k * 2] = u; uv[k * 2 + 1] = w;
   }
   const idx = new Uint32Array((NX - 1) * (NY - 1) * 6); let n = 0;
   for (let j = 0; j < NY - 1; j++) for (let i = 0; i < NX - 1; i++) {
@@ -415,16 +491,271 @@ function buildTerrain() {
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   g.computeBoundingSphere(); g.boundingSphere.radius += 10;
-  const m = new THREE.Mesh(g, terrainMat); scene.add(m);
+  scene.add(new THREE.Mesh(g, terrainMat));
   const c = llv(48.0, 11.3, 0), f = enu(c), az = 165 * D2R, el = 24 * D2R;
-  terrainMat.uniforms.uRegionSun.value.copy(f.east).multiplyScalar(Math.sin(az) * Math.cos(el))
+  uni.uRegionSun.value.copy(f.east).multiplyScalar(Math.sin(az) * Math.cos(el))
     .addScaledVector(f.north, Math.cos(az) * Math.cos(el)).addScaledVector(f.up, Math.sin(el)).normalize();
-  globeMat.uniforms.uRegionSun.value.copy(terrainMat.uniforms.uRegionSun.value);
+}
+
+/* ---------- 3D buildings (Overture / OpenStreetMap footprints) ---------- */
+const bldgMat = new THREE.ShaderMaterial({
+  uniforms: { ...uni, uOrigin: { value: new V3() }, uFade: { value: 0 } },
+  side: THREE.DoubleSide, transparent: true,
+  vertexShader: `attribute float aTint; attribute float aH; varying vec3 vL; varying float vTint, vH; uniform vec3 uOrigin;
+    void main(){ vL=position; vTint=aTint; vH=aH; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader: HAZE + `uniform vec3 uOrigin, uRegionSun; uniform float uWinter, uAlt, uFade; varying vec3 vL; varying float vTint, vH;
+    void main(){
+      vec3 n=normalize(cross(dFdx(vL),dFdy(vL)));
+      vec3 wp=vL+uOrigin, up=normalize(uOrigin), toCam=cameraPosition-wp;
+      if(dot(n,toCam)<0.) n=-n;
+      float t=fract(vTint), church=step(1.,vTint);
+      float roof=smoothstep(.3,.55,dot(n,up));
+      vec3 wall=t<.25?vec3(.80,.74,.62):t<.42?vec3(.86,.84,.78):t<.58?vec3(.82,.66,.42):t<.72?vec3(.78,.56,.50):t<.86?vec3(.62,.68,.58):vec3(.70,.62,.55);
+      vec3 rf=t<.5?vec3(.40,.17,.11):t<.78?vec3(.27,.23,.22):vec3(.46,.26,.17);
+      if(church>.5){ wall=vec3(.92,.9,.85); rf=vec3(.33,.36,.38); }
+      rf=mix(rf,vec3(.88,.91,.95),uWinter*(.3+.3*fract(vTint*7.3)));
+      vec3 col=mix(wall,rf,roof);
+      float dif=max(dot(n,normalize(uRegionSun)),0.);
+      col*=(.3+.72*dif)*mix(.5,1.,smoothstep(0.,.8,vH));
+      float d=length(toCam);
+      col=applyHaze(col,d,uAlt);
+      float a=uFade*(1.-smoothstep(28.,45.,d));
+      if(a<.01) discard;
+      gl_FragColor=vec4(col,a); gl_FragColor=linearToOutputTexel(gl_FragColor);
+    }`,
+});
+function buildBuildings(buf, meta) {
+  const u = new Uint16Array(buf), s = new Int16Array(buf), N = u.length;
+  const pos = [], tint = [], hv = [], idx = [];
+  const origin = ground(meta.oy + 0.05, meta.ox + 0.05), tmp = new V3();
+  let i = 0, k = 0;
+  const xs = [], ys = [];
+  while (i < N) {
+    const n = u[i], hd = u[i + 1], church = (hd & 0x4000) !== 0, h = (hd & 0x3fff) / 10;
+    let x = (u[i + 2] << 16) | u[i + 3], y = (u[i + 4] << 16) | u[i + 5];
+    i += 6; xs.length = 0; ys.length = 0; xs.push(x); ys.push(y);
+    for (let j = 1; j < n; j++) { x += s[i]; y += s[i + 1]; i += 2; xs.push(x); ys.push(y); }
+    let cx = 0, cy = 0, area = 0;
+    for (let j = 0; j < n; j++) { cx += xs[j]; cy += ys[j]; const j2 = (j + 1) % n; area += xs[j] * ys[j2] - xs[j2] * ys[j]; }
+    cx /= n; cy /= n; area = Math.abs(area) / 8;                          // 0.5 m units -> m²
+    const lonOf = xx => meta.ox + xx / 2 / meta.kx, latOf = yy => meta.oy + yy / 2 / meta.ky;
+    const clat = latOf(cy), clon = lonOf(cx), base = terrainKm(clat, clon);
+    const top = base + h * BHS / 1000, bot = base - 0.02;
+    let convex = true, sg = 0;
+    for (let j = 0; j < n; j++) {
+      const a = j, b = (j + 1) % n, c = (j + 2) % n;
+      const cr = (xs[b] - xs[a]) * (ys[c] - ys[b]) - (ys[b] - ys[a]) * (xs[c] - xs[b]);
+      if (cr !== 0) { if (sg && Math.sign(cr) !== sg) { convex = false; break; } sg = Math.sign(cr); }
+    }
+    const roofH = clamp(Math.sqrt(area) * (church ? .45 : .24), 1.5, church ? 18 : 7) * BHS / 1000;
+    const tv = church ? 1.5 : ((Math.sin(cx * 12.9898 + cy * 78.233) * 43758.5453) % 1 + 1) % 1;
+    const start = k;
+    for (let j = 0; j < n; j++) { llv(latOf(ys[j]), lonOf(xs[j]), bot, tmp).sub(origin); pos.push(tmp.x, tmp.y, tmp.z); tint.push(tv); hv.push(0); }
+    for (let j = 0; j < n; j++) { llv(latOf(ys[j]), lonOf(xs[j]), top, tmp).sub(origin); pos.push(tmp.x, tmp.y, tmp.z); tint.push(tv); hv.push(1); }
+    k += 2 * n;
+    for (let j = 0; j < n; j++) {
+      const j2 = (j + 1) % n, b0 = start + j, b1 = start + j2, t0 = start + n + j, t1 = start + n + j2;
+      idx.push(b0, b1, t1, b0, t1, t0);
+    }
+    if (convex && n <= 8) {
+      llv(clat, clon, top + roofH, tmp).sub(origin); pos.push(tmp.x, tmp.y, tmp.z); tint.push(tv); hv.push(1);
+      const apex = k++;
+      for (let j = 0; j < n; j++) idx.push(start + n + j, start + n + (j + 1) % n, apex);
+    } else {
+      const pts = xs.map((xx, j) => new THREE.Vector2(xx, ys[j]));
+      for (const tri of THREE.ShapeUtils.triangulateShape(pts, [])) idx.push(start + n + tri[0], start + n + tri[1], start + n + tri[2]);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aTint', new THREE.Float32BufferAttribute(tint, 1));
+  g.setAttribute('aH', new THREE.Float32BufferAttribute(hv, 1));
+  g.setIndex(idx);
+  const mat = bldgMat.clone();
+  for (const key of Object.keys(uni)) mat.uniforms[key] = uni[key];
+  mat.uniforms.uOrigin.value.copy(origin);
+  const m = new THREE.Mesh(g, mat); m.position.copy(origin); m.frustumCulled = false;
+  return m;
+}
+
+/* ---------- landmark models (built in code; stand-ins for Blender .glb models) ---------- */
+const LMAT = {};
+const roofMats = [];
+function lmat(name, color, o = {}) {
+  if (!LMAT[name]) {
+    const roof = o.roof; delete o.roof;
+    LMAT[name] = new THREE.MeshStandardMaterial({ color, roughness: .8, metalness: 0, ...o });
+    if (roof) roofMats.push({ m: LMAT[name], base: new THREE.Color(color) });
+  }
+  return LMAT[name];
+}
+const K = {
+  box(g, w, h, d, m, x = 0, y = 0, z = 0) { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y + h / 2, z); g.add(o); return o; },
+  gable(g, len, wid, h, m, x = 0, y = 0, z = 0, alongZ = false) {   // ridge runs along x (or z)
+    const s = new THREE.Shape([new THREE.Vector2(-wid / 2, 0), new THREE.Vector2(wid / 2, 0), new THREE.Vector2(0, h)]);
+    const geo = new THREE.ExtrudeGeometry(s, { depth: len, bevelEnabled: false }); geo.translate(0, 0, -len / 2);
+    if (!alongZ) geo.rotateY(Math.PI / 2);
+    const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); g.add(o); return o;
+  },
+  cyl(g, r, h, m, x = 0, y = 0, z = 0, seg = 16, r2) { const o = new THREE.Mesh(new THREE.CylinderGeometry(r2 ?? r, r, h, seg), m); o.position.set(x, y + h / 2, z); g.add(o); return o; },
+  cone(g, r, h, m, x = 0, y = 0, z = 0, seg = 16) { const o = new THREE.Mesh(new THREE.ConeGeometry(r, h, seg), m); o.position.set(x, y + h / 2, z); g.add(o); return o; },
+  onion(g, r, h, m, x = 0, y = 0, z = 0) {
+    const pts = [[0, 0], [r * .8, .05], [r, .25], [r * .85, .5], [r * .35, .72], [r * .12, .85], [r * .08, 1]].map(([a, b]) => new THREE.Vector2(a, b * h));
+    const o = new THREE.Mesh(new THREE.LatheGeometry(pts, 20), m); o.position.set(x, y, z); g.add(o); return o;
+  },
+  dome(g, r, m, x = 0, y = 0, z = 0) { const o = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), m); o.position.set(x, y, z); g.add(o); return o; },
+};
+// Real-world metres; x = east, y = up, z = south before the heading turn. Walls run 30 m below ground so slopes never show a gap.
+const LM_BUILD = {
+  frauenkircheMuc(g) {
+    const brick = lmat('brick', 0x9a5840), roof = lmat('tileRed', 0x7c3a2c, { roof: 1 }), cu = lmat('copper', 0x5d8c78, { roof: 1 });
+    K.box(g, 92, 61, 40, brick, 14, -30); K.gable(g, 92, 40, 30, roof, 14, 31);
+    for (const z of [-11, 11]) {
+      K.box(g, 17, 102, 17, brick, -38, -30, z);
+      K.cyl(g, 8.3, 10, brick, -38, 72, z, 8);
+      K.onion(g, 9.2, 17, cu, -38, 82, z);
+    }
+  },
+  rathaus(g) {
+    const st = lmat('greyStone', 0x8b8373), sl = lmat('slate', 0x4b5157, { roof: 1 });
+    K.box(g, 98, 54, 34, st, 0, -30); K.gable(g, 98, 34, 15, sl, 0, 24);
+    K.box(g, 13, 98, 13, st, 0, -30, 14); K.cone(g, 7.5, 17, sl, 0, 68, 14, 4);
+  },
+  alterPeter(g) {
+    const w = lmat('whitewash', 0xddd5c6), roof = lmat('tileRed', 0x7c3a2c, { roof: 1 }), cu = lmat('copper', 0x5d8c78, { roof: 1 });
+    K.box(g, 52, 50, 22, w, 10, -30); K.gable(g, 52, 22, 14, roof, 10, 20);
+    K.box(g, 12, 98, 12, w, -22, -30); K.cyl(g, 5, 10, cu, -22, 68, 0, 8, 3.2);
+    K.cyl(g, 3.2, 7, w, -22, 78, 0, 8); K.onion(g, 4, 8, cu, -22, 85, 0);
+  },
+  stMichael(g) {
+    const w = lmat('sandstone', 0xd6ccb8), roof = lmat('tileRed', 0x7c3a2c, { roof: 1 });
+    K.box(g, 20, 60, 78, w, 0, -30); K.gable(g, 78, 20, 18, roof, 0, 30, 0, true);
+    K.box(g, 24, 70, 4, w, 0, -30, -40);
+  },
+  domIbk(g) {
+    const st = lmat('ochreStone', 0xe0cba6), cu = lmat('copper', 0x5d8c78, { roof: 1 });
+    K.box(g, 62, 54, 24, st, 8, -30); K.gable(g, 62, 24, 10, cu, 8, 24);
+    for (const z of [-10, 10]) { K.box(g, 9, 76, 9, st, -26, -30, z); K.onion(g, 5.4, 12, cu, -26, 46, z); }
+    K.cyl(g, 9, 12, st, 14, 24); K.dome(g, 9, cu, 14, 36); K.cyl(g, 2, 6, st, 14, 44); K.onion(g, 2.4, 5, cu, 14, 50);
+  },
+  hofkirche(g) {
+    const w = lmat('whitewash', 0xddd5c6), sl = lmat('slate', 0x4b5157, { roof: 1 }), cu = lmat('copper', 0x5d8c78, { roof: 1 });
+    K.box(g, 22, 50, 50, w, 0, -30); K.gable(g, 50, 22, 18, sl, 0, 20, 0, true);
+    K.box(g, 8, 76, 8, w, 14, -30, -10); K.onion(g, 5, 12, cu, 14, 46, -10);
+  },
+  goldenesDachl(g) {
+    const w = lmat('whitewash', 0xddd5c6), gold = lmat('gold', 0xd9a52b, { metalness: .9, roughness: .3, emissive: 0x3a2a05 });
+    K.box(g, 16, 52, 14, w, 0, -30); K.cone(g, 9, 8, gold, 0, 22, 4, 4);
+  },
+  bergisel(g) {
+    const c = lmat('concrete', 0xb9bcbf), glass = lmat('glass', 0x2f3a46, { metalness: .6, roughness: .2 });
+    K.box(g, 7, 82, 7, c, 0, -30); K.box(g, 30, 9, 12, glass, -4, 50);
+    const ramp = new THREE.Mesh(new THREE.BoxGeometry(4, 2, 105), c); ramp.position.set(0, 26, -52); ramp.rotation.x = -.62; g.add(ramp);
+  },
+  neuschwanstein(g) {
+    const lime = lmat('limestone', 0xeeece6), sl = lmat('slateBlue', 0x56616e, { roof: 1 }), ochre = lmat('ochreBrick', 0xc98f62);
+    K.box(g, 150, 60, 40, lmat('rock', 0x8a8478), 10, -60, 0);
+    K.box(g, 62, 30, 18, lime, -18, 0, 0); K.gable(g, 62, 18, 14, sl, -18, 30);
+    for (const z of [-9, 9]) { K.cyl(g, 3.4, 42, lime, -50, 0, z); K.cone(g, 4.2, 12, sl, -50, 42, z); }
+    K.cyl(g, 4.2, 56, lime, -6, 0, -12); K.cone(g, 5, 14, sl, -6, 56, -12);
+    K.box(g, 10, 44, 10, lime, 26, 0, 6); K.box(g, 12, 3, 12, lime, 26, 44, 6);
+    K.box(g, 40, 9, 5, lime, 36, 0, -14);
+    K.box(g, 30, 18, 14, ochre, 60, 0, 0); K.gable(g, 30, 14, 8, sl, 60, 18);
+    for (const z of [-8, 8]) { K.cyl(g, 3, 24, ochre, 74, 0, z); K.cone(g, 3.6, 8, sl, 74, 24, z); }
+  },
+  hohenschwangau(g) {
+    const y = lmat('yellow', 0xe6c36a), sl = lmat('slateBlue', 0x56616e, { roof: 1 });
+    K.box(g, 60, 40, 30, lmat('rock', 0x8a8478), 0, -40, 0);
+    K.box(g, 42, 16, 18, y, 0, 0, 0); K.gable(g, 42, 18, 6, sl, 0, 16);
+    for (const [x, z] of [[-22, -9], [22, 9], [6, -12]]) K.cyl(g, 4.2, 24, y, x, 0, z);
+  },
+  kufstein(g) {
+    const st = lmat('fortStone', 0xc2b8a4), roof = lmat('tileRed', 0x7c3a2c, { roof: 1 });
+    K.cyl(g, 60, 80, lmat('rock', 0x8a8478), 0, -70, 0, 20, 52);
+    K.cyl(g, 45, 12, st, 0, 0, 0, 20);
+    K.cyl(g, 12, 34, st, 18, 0, 6, 20); K.cone(g, 14, 10, roof, 18, 34, 6, 20);
+    K.box(g, 30, 16, 16, st, -18, 0, -6); K.gable(g, 30, 16, 7, roof, -18, 16, -6);
+  },
+  kaiserburg(g) {
+    const ss = lmat('redSandstone', 0xae6a54), roof = lmat('tileRed', 0x7c3a2c, { roof: 1 });
+    K.box(g, 120, 50, 40, lmat('rockRed', 0x9a6a58), 10, -45, 0);
+    K.box(g, 48, 18, 16, ss, -30, 0, -6); K.gable(g, 48, 16, 12, roof, -30, 18, -6);
+    K.cyl(g, 6.5, 30, ss, 10, 0, 6, 16); K.cone(g, 7, 12, roof, 10, 30, 6, 16);
+    K.box(g, 10, 24, 10, ss, 40, 0, 0); K.gable(g, 10, 10, 6, roof, 40, 24);
+    K.box(g, 9, 22, 9, ss, 62, 0, -4); K.cone(g, 7, 9, roof, 62, 22, -4, 4);
+  },
+  stLorenz(g) {
+    const ss = lmat('redSandstone', 0xae6a54), sl = lmat('slate', 0x4b5157, { roof: 1 });
+    K.box(g, 90, 52, 28, ss, 12, -30); K.gable(g, 90, 28, 22, sl, 12, 22);
+    for (const z of [-9, 9]) { K.box(g, 9, 85, 9, ss, -36, -30, z); K.cyl(g, 4.5, 8, ss, -36, 55, z, 8); K.cone(g, 4.6, 22, sl, -36, 63, z, 8); }
+  },
+  frauenkircheNue(g) {
+    const ss = lmat('redSandstone', 0xae6a54), sl = lmat('slate', 0x4b5157, { roof: 1 });
+    K.box(g, 30, 46, 22, ss, 0, -30); K.gable(g, 30, 22, 16, sl, 0, 16);
+    K.box(g, 4, 44, 22, ss, -16, -30); K.cone(g, 2.2, 10, sl, -16, 14, 0, 6);
+  },
+  wieskirche(g) {
+    const w = lmat('whitewash', 0xddd5c6), sl = lmat('slate', 0x4b5157, { roof: 1 }), cu = lmat('copper', 0x5d8c78, { roof: 1 });
+    K.cyl(g, 18, 46, w, 0, -30, 0, 24); K.cone(g, 19, 10, sl, 0, 16, 0, 24);
+    K.box(g, 14, 48, 30, w, 26, -30); K.gable(g, 30, 14, 7, sl, 26, 18, 0, true);
+    K.box(g, 6, 70, 6, w, 42, -30); K.onion(g, 4, 9, cu, 42, 40);
+  },
+};
+const LANDMARKS = [
+  { b: 'frauenkircheMuc', lat: 48.13862, lon: 11.57355, hd: 0 }, { b: 'rathaus', lat: 48.13760, lon: 11.57590, hd: 0 },
+  { b: 'alterPeter', lat: 48.13645, lon: 11.57565, hd: 0 }, { b: 'stMichael', lat: 48.13880, lon: 11.57060, hd: 0 },
+  { b: 'domIbk', lat: 47.26920, lon: 11.39380, hd: -8 }, { b: 'hofkirche', lat: 47.26830, lon: 11.39560, hd: 0 },
+  { b: 'goldenesDachl', lat: 47.26860, lon: 11.39330, hd: 0, k: 1.8 }, { b: 'bergisel', lat: 47.24900, lon: 11.39950, hd: 0, k: 1.8 },
+  { b: 'neuschwanstein', lat: 47.55760, lon: 10.74980, hd: -20, k: 2.2 }, { b: 'hohenschwangau', lat: 47.55530, lon: 10.73640, hd: 10, k: 2 },
+  { b: 'kufstein', lat: 47.58360, lon: 12.17060, hd: 0, k: 2 }, { b: 'kaiserburg', lat: 49.45780, lon: 11.07580, hd: 0, k: 1.6 },
+  { b: 'stLorenz', lat: 49.45090, lon: 11.07860, hd: 0 }, { b: 'frauenkircheNue', lat: 49.45450, lon: 11.07790, hd: 0 },
+  { b: 'wieskirche', lat: 47.68110, lon: 10.90020, hd: 0, k: 2 },
+];
+const landmarkGroup = new THREE.Group(); scene.add(landmarkGroup);
+function buildLandmarks() {
+  const m = new THREE.Matrix4();
+  for (const L of LANDMARKS) {
+    const g = new THREE.Group(); LM_BUILD[L.b](g);
+    const p = ground(L.lat, L.lon), f = enu(p);
+    m.makeBasis(f.east, f.up, f.north.clone().negate());
+    g.quaternion.setFromRotationMatrix(m); g.rotateY(-L.hd * D2R);
+    const k = (L.k || 1.3) * .001;
+    g.position.copy(p); g.scale.set(k, k * BHS, k);
+    landmarkGroup.add(g);
+  }
+}
+
+/* ---------- detail packs: 10 m imagery + buildings per leg, swapped behind the clouds ---------- */
+const packs = {}; let activePack = null;
+async function loadPack(name) {
+  const [atlas, idx, meta, buf] = await Promise.all([
+    loadTex(`assets/packs/${name}.jpg`), loadTex(`assets/packs/${name}-index.png`, false),
+    fetch(`assets/packs/${name}.json`).then(r => r.json()), fetch(`assets/packs/${name}.bin`).then(r => r.arrayBuffer()),
+  ]);
+  idx.flipY = false; idx.magFilter = idx.minFilter = THREE.NearestFilter; idx.generateMipmaps = false; idx.needsUpdate = true;
+  const mesh = buildBuildings(buf, meta);
+  return { atlas, idx, rows: atlas.image.height / 128, mesh };
+}
+async function usePack(name) {
+  if (!name || activePack === name) return;
+  activePack = name;
+  for (const [k, p] of Object.entries(packs)) {          // keep GPU memory low: drop other packs
+    if (k === name) continue;
+    p.then(d => { d.atlas.dispose(); d.idx.dispose(); d.mesh.geometry.dispose(); scene.remove(d.mesh); }).catch(() => {});
+    delete packs[k];
+  }
+  packs[name] = packs[name] || loadPack(name);
+  let d; try { d = await packs[name]; } catch (e) { console.warn('detail pack failed', name, e); return; }
+  if (activePack !== name) return;
+  const u = terrainMat.uniforms;
+  u.det.value = d.atlas; u.detIdx.value = d.idx; u.uDetAtlas.value.set(32, d.rows); u.uDetOn.value = 0;
+  if (!d.mesh.parent) scene.add(d.mesh);
+  d.mesh.material.uniforms.uFade.value = 0; state.packMesh = d.mesh;
 }
 
 /* ---------- paths ---------- */
 class Path {
-  constructor(pts) {   // pts: Vector3[] (world)
+  constructor(pts) {
     this.p = pts; this.s = [0];
     for (let i = 1; i < pts.length; i++) this.s.push(this.s[i - 1] + pts[i].distanceTo(pts[i - 1]));
     this.len = this.s[this.s.length - 1];
@@ -436,6 +767,11 @@ class Path {
     out.lerpVectors(this.p[lo], this.p[hi], t);
     if (tan) tan.subVectors(this.p[hi], this.p[lo]).normalize();
     return out;
+  }
+  nearest(v) {
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < this.p.length; i++) { const d = this.p[i].distanceToSquared(v); if (d < bd) { bd = d; best = i; } }
+    return { i: best, s: this.s[best], d: Math.sqrt(bd) };
   }
   reversed() { return new Path(this.p.slice().reverse()); }
 }
@@ -450,7 +786,7 @@ function chaikin(ll, it = 2) {
   }
   return ll;
 }
-function groundPath(lonlat, lift = 0.07, step = 0.25) {
+function groundPath(lonlat, lift = 0.05, step = 0.2) {
   const ll = chaikin(lonlat), pts = [];
   for (let i = 0; i < ll.length - 1; i++) {
     const [x0, y0] = ll[i], [x1, y1] = ll[i + 1];
@@ -460,7 +796,7 @@ function groundPath(lonlat, lift = 0.07, step = 0.25) {
   const e = ll[ll.length - 1]; pts.push(ground(e[1], e[0], lift));
   return new Path(pts);
 }
-function flightPath(a, b) {   // a,b: {lat,lon}
+function flightPath(a, b) {
   const va = llv(a.lat, a.lon).normalize(), vb = llv(b.lat, b.lon).normalize();
   const ang = va.angleTo(vb), gkm = ang * R, peak = Math.min(gkm * 0.11, 850);
   const ha = terrainKm(a.lat, a.lon) + 0.05, hb = terrainKm(b.lat, b.lon) + 0.05, pts = [], N = 320;
@@ -506,7 +842,7 @@ function routeRibbon(path, color, dashed) {
   for (const xray of [false, true]) {
     const m = new THREE.ShaderMaterial({
       uniforms: { ...uni, uColor: { value: new THREE.Color(color) }, uReveal: { value: path.len }, uAlpha: { value: .25 },
-        uWorldW: { value: 0.12 }, uMinPx: { value: dashed ? 3.2 : 3.6 }, uMaxPx: { value: 9 }, uTotal: { value: path.len } },
+        uWorldW: { value: 0.03 }, uMinPx: { value: dashed ? 3.2 : 3.6 }, uMaxPx: { value: 8 }, uTotal: { value: path.len } },
       transparent: true, depthWrite: false, depthTest: !xray, side: THREE.DoubleSide,
       vertexShader: ribbonVS,
       fragmentShader: `uniform vec3 uColor; uniform float uReveal,uAlpha,uTime,uTotal; varying float vU, vSide;
@@ -522,15 +858,14 @@ function routeRibbon(path, color, dashed) {
 }
 function riverRibbon(path, worldW) {
   const m = new THREE.ShaderMaterial({
-    uniforms: { ...uni, uWorldW: { value: worldW }, uMinPx: { value: 1.2 }, uMaxPx: { value: 8 } },
+    uniforms: { ...uni, uWorldW: { value: worldW }, uMinPx: { value: 1.2 }, uMaxPx: { value: 10 } },
     transparent: true, depthWrite: false, side: THREE.DoubleSide,
     vertexShader: ribbonVS,
-    fragmentShader: NOISE + `uniform float uTime,uAlt,uWinter; varying float vU, vSide;
+    fragmentShader: NOISE + `uniform float uTime,uAlt; varying float vU, vSide;
       void main(){
         float edge=1.-smoothstep(.45,1.,abs(vSide));
         float flow=vnoise(vec3(vU*1.6-uTime*.9, vSide*2., 0.))*.6+vnoise(vec3(vU*5.-uTime*2.6, vSide*5., 3.))*.4;
-        vec3 glacial=vec3(.30,.62,.60), sheen=vec3(.85,.97,1.);
-        vec3 c=mix(glacial,sheen,smoothstep(.55,.85,flow)*.75);
+        vec3 c=mix(vec3(.30,.62,.60),vec3(.85,.97,1.),smoothstep(.55,.85,flow)*.75);
         float a=edge*.9*(1.-smoothstep(500.,1400.,uAlt));
         gl_FragColor=vec4(c,a); gl_FragColor=linearToOutputTexel(gl_FragColor);
       }`,
@@ -538,7 +873,7 @@ function riverRibbon(path, worldW) {
   const mesh = new THREE.Mesh(ribbonGeom(path), m); mesh.renderOrder = 1; mesh.frustumCulled = false; scene.add(mesh);
 }
 
-/* ---------- vehicles (procedural low-poly stand-ins for Blender .glb models) ---------- */
+/* ---------- vehicles (built in code; stand-ins for Blender .glb models) ---------- */
 const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: .45, metalness: .15, ...o });
 function shapeMesh(pts, planeKind, depth, mat) {
   const s = new THREE.Shape(); pts.forEach(([a, b], i) => i ? s.lineTo(a, planeKind === 'xz' ? -b : b) : s.moveTo(a, planeKind === 'xz' ? -b : b));
@@ -557,7 +892,7 @@ function makePlane() {
     const st = shapeMesh([[0, -.42], [.2 * sx, -.55], [.2 * sx, -.6], [0, -.56]], 'xz', .01, white); st.position.y = .02; g.add(st);
     const eng = new THREE.Mesh(new THREE.CylinderGeometry(.032, .028, .14, 14), grey); eng.rotation.x = Math.PI / 2; eng.position.set(.2 * sx, -.065, .06); g.add(eng);
   }
-  const fin = shapeMesh([[-.4, .04], [-.6, .25], [-.66, .25], [-.62, .04]], 'zy', .012, navy); g.add(fin);
+  g.add(shapeMesh([[-.4, .04], [-.6, .25], [-.66, .25], [-.62, .04]], 'zy', .012, navy));
   const stripe = new THREE.Mesh(new THREE.CylinderGeometry(.0565, .0565, .5, 20, 1, true, -.6, 1.2), navy); stripe.rotation.x = Math.PI / 2; stripe.rotation.z = Math.PI; g.add(stripe);
   return g;
 }
@@ -594,28 +929,24 @@ const keyLight = new THREE.DirectionalLight(0xffffff, 2.2); scene.add(keyLight);
 
 const _m = new THREE.Matrix4(), _x = new V3(), _y = new V3(), _z = new V3();
 function placeObj(obj, pos, tan, scale, keepPitch) {
-  _y.copy(pos).normalize();
-  _z.copy(tan);
+  _y.copy(pos).normalize(); _z.copy(tan);
   if (!keepPitch) _z.addScaledVector(_y, -_z.dot(_y));
-  _z.normalize();
-  _x.crossVectors(_y, _z).normalize(); _y.crossVectors(_z, _x);
+  _z.normalize(); _x.crossVectors(_y, _z).normalize(); _y.crossVectors(_z, _x);
   _m.makeBasis(_x, _y, _z); obj.quaternion.setFromRotationMatrix(_m);
   obj.position.copy(pos); obj.scale.setScalar(scale);
 }
-const vScale = (pos, k, min) => Math.max(min, camera.position.distanceTo(pos) * k);
-function drawPlane(obj, path, d) {
-  const p = path.at(d, new V3(), _tan); placeObj(obj, p, _tan, vScale(p, .05, .06), true); obj.visible = true; return p;
-}
+const vScale = (pos, k, min) => Math.max(min, camera.position.distanceTo(pos) * k * (phone() ? 1.45 : 1));
 const _tan = new V3(), _tp = new V3();
+function drawPlane(obj, path, d) { const p = path.at(d, new V3(), _tan); placeObj(obj, p, _tan, vScale(p, .05, .06), true); obj.visible = true; return p; }
 function drawTrain(path, d) {
-  const lead = path.at(d, new V3(), _tan), s = vScale(lead, .02, .03);
+  const lead = path.at(d, new V3(), _tan), s = vScale(lead, .018, .025);
   cars.forEach((c, i) => { const q = path.at(d - i * s * .97, _tp, _tan); placeObj(c, q, _tan, s); });
   train.visible = true; return lead;
 }
-function drawVan(path, d) { const p = path.at(d, new V3(), _tan); placeObj(van, p, _tan, vScale(p, .022, .02)); van.visible = true; return p; }
+function drawVan(path, d) { const p = path.at(d, new V3(), _tan); placeObj(van, p, _tan, vScale(p, .02, .012)); van.visible = true; return p; }
 function hideVehicles() { [plane, plane2, van, train].forEach(o => o.visible = false); }
 
-/* ---------- local alpine clouds (sprites) ---------- */
+/* ---------- clouds: alpine puffs, a bank around the detailed patch, and a veil for big zooms ---------- */
 const sprites = [];
 function cloudTexture() {
   const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d');
@@ -630,21 +961,18 @@ function cloudTexture() {
 function buildSprites() {
   const t = cloudTexture();
   for (let i = 0; i < 46; i++) {
-    const m = new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, opacity: 0, color: 0xf4f6fa });
-    const s = new THREE.Sprite(m);
-    const lat = 46.95 + Math.random() * .85, lon = 10.0 + Math.random() * 2.4;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, opacity: 0, color: 0xf4f6fa }));
     const size = 7 + Math.random() * 12;
-    s.userData = { lat, lon, h: 4.4 + Math.random() * 1.8, size, base: .55 + Math.random() * .4, drift: .002 + Math.random() * .003 };
+    s.userData = { lat: 46.95 + Math.random() * .85, lon: 10.0 + Math.random() * 2.4, h: 4.4 + Math.random() * 1.8, size, base: .55 + Math.random() * .4, drift: .002 + Math.random() * .003 };
     s.scale.set(size * 1.8, size, 1); s.renderOrder = 4; scene.add(s); sprites.push(s);
   }
-  // a cloud bank along the edge of the detailed terrain hides the seam with the globe from mid altitudes
   for (let i = 0; i < 70; i++) {
-    const m = new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, opacity: 0, color: 0xeef1f6 });
-    const s = new THREE.Sprite(m), side = i % 4, f = Math.random(), j = (Math.random() - .5) * .14;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, opacity: 0, color: 0xeef1f6 }));
+    const side = i % 4, f = Math.random(), j = (Math.random() - .5) * .14;
     const lat = side === 0 ? BB.S + j : side === 1 ? BB.N + j : lerp(BB.S, BB.N, f);
     const lon = side === 2 ? BB.W + j * 1.4 : side === 3 ? BB.E + j * 1.4 : lerp(BB.W, BB.E, f);
     const size = 45 + Math.random() * 45;
-    s.userData = { lat: side < 2 ? lat : lat, lon, h: 10 + Math.random() * 14, size, base: .8 + Math.random() * .2, drift: 0, border: 1 };
+    s.userData = { lat, lon, h: 10 + Math.random() * 14, size, base: .8 + Math.random() * .2, drift: 0, border: 1 };
     s.scale.set(size * 1.7, size, 1); s.renderOrder = 4; scene.add(s); sprites.push(s);
   }
 }
@@ -657,8 +985,6 @@ function updateSprites(dt, alt) {
     s.material.opacity = u.base * .7 * state.clouds * smooth(u.size * 1.2, u.size * 4, d) * (1 - smooth(250, 700, alt));
   }
 }
-
-/* ---------- full-screen cloud veil for big moves ---------- */
 const veilScene = new THREE.Scene(), veilCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 const veilMat = new THREE.ShaderMaterial({
   uniforms: { ...uni, uCover: { value: 0 }, uOff: { value: new THREE.Vector2() } }, transparent: true, depthTest: false, depthWrite: false,
@@ -667,8 +993,7 @@ const veilMat = new THREE.ShaderMaterial({
     void main(){
       vec2 p=(vUv-.5)*vec2(uRes.x/uRes.y,1.)*2.2;
       float a1=fbm(vec3(p*1.2+uOff*.6, uTime*.05)), a2=fbm(vec3(p*2.6+uOff*1.4+7., uTime*.08));
-      float n=a1*.6+a2*.4;
-      float th=mix(.75,.12,uCover);
+      float n=a1*.6+a2*.4, th=mix(.75,.12,uCover);
       float a=smoothstep(th,th+.25,n)*smoothstep(0.,.25,uCover);
       vec3 c=mix(vec3(.70,.76,.86),vec3(1.,.99,.97),smoothstep(.3,.8,a2));
       gl_FragColor=vec4(c,clamp(a*1.15,0.,1.)); gl_FragColor=linearToOutputTexel(gl_FragColor);
@@ -676,7 +1001,7 @@ const veilMat = new THREE.ShaderMaterial({
 });
 veilScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), veilMat));
 
-/* ---------- snowfall overlay (Christmas in Innsbruck) ---------- */
+/* ---------- snowfall overlay ---------- */
 const snowCv = document.getElementById('snow'), sctx = snowCv.getContext('2d');
 const flakes = Array.from({ length: 220 }, () => ({ x: Math.random(), y: Math.random(), r: .6 + Math.random() * 2.2, v: .02 + Math.random() * .05, w: Math.random() * 6 }));
 function drawSnow(dt, amt) {
@@ -685,8 +1010,7 @@ function drawSnow(dt, amt) {
   sctx.fillStyle = `rgba(255,255,255,${.75 * amt})`;
   for (const f of flakes) {
     f.y += f.v * dt * (0.6 + f.r * .3); f.w += dt; if (f.y > 1.02) { f.y = -.02; f.x = Math.random(); }
-    const x = (f.x + Math.sin(f.w) * .006) * w, y = f.y * h;
-    sctx.beginPath(); sctx.arc(x, y, f.r * devicePixelRatio * .7, 0, 6.283); sctx.fill();
+    sctx.beginPath(); sctx.arc((f.x + Math.sin(f.w) * .006) * w, f.y * h, f.r * devicePixelRatio * .7, 0, 6.283); sctx.fill();
   }
 }
 
@@ -696,6 +1020,10 @@ function applyCam() {
   const f = enu(cam.target), h = cam.heading * D2R, t = cam.tilt * D2R;
   const fwd = f.north.clone().multiplyScalar(Math.cos(h)).addScaledVector(f.east, Math.sin(h));
   camera.position.copy(cam.target).addScaledVector(f.up, Math.cos(t) * cam.dist).addScaledVector(fwd, -Math.sin(t) * cam.dist);
+  // keep the camera above the terrain in tight valley shots
+  const cl = camera.position.clone().normalize(), lat = Math.asin(cl.y) / D2R, lon = Math.atan2(cl.x, cl.z) / D2R;
+  const floor = R + terrainKm(lat, lon) + .35;
+  if (camera.position.length() < floor) camera.position.setLength(floor);
   camera.up.copy(fwd).multiplyScalar(Math.cos(t)).addScaledVector(f.up, Math.sin(t));
   camera.lookAt(cam.target);
   const alt = Math.max(.05, camera.position.length() - R);
@@ -704,28 +1032,45 @@ function applyCam() {
   camera.updateProjectionMatrix();
   return alt;
 }
+// Shift the picture so the focus sits in the open area between the header and the card,
+// and work out how much further back wide shots need to sit on a narrow screen.
+let viewKey = '', fit = 1, fitClose = 1;
+function updateViewOffset() {
+  const w = innerWidth, h = innerHeight;
+  const cardTop = document.getElementById('dock').firstElementChild.getBoundingClientRect().top;
+  const topRes = phone() ? 70 : 0;
+  const cy = (topRes + cardTop) / 2, off = Math.round(h / 2 - cy);
+  const key = w + 'x' + h + ':' + off;
+  if (key === viewKey) return;
+  viewKey = key;
+  camera.setViewOffset(w, h, 0, off, w, h);
+  const tf = Math.tan(camera.fov * D2R / 2), visH = Math.max(120, cardTop - topRes);
+  const ref = tf * 540 / 800, cur = Math.min(tf * visH / h, tf * w / h);
+  fit = clamp(ref / cur, 1, 2.4); fitClose = Math.sqrt(fit);
+}
 function headingOf(pos, tan) { const f = enu(pos); return Math.atan2(tan.dot(f.east), tan.dot(f.north)) / D2R; }
-function view(lat, lon, dist, tilt = 0, heading = 0) { return { target: ground(lat, lon), dist, tilt, heading }; }
+function view(lat, lon, dist, tilt = 0, heading = 0) { return { target: ground(lat, lon), dist: dist * fitClose, tilt, heading }; }
+const far = (v) => ({ ...v, dist: v.dist / fitClose * fit });
 
+const clock = { t: 0, speed: 1 };
 let token = { dead: false };
 function anim(dur, fn) {
   const tok = token;
   return new Promise(res => {
-    const t0 = performance.now();
+    const t0 = clock.t;
     (function tick() {
       if (tok.dead) return res(false);
-      const t = clamp((performance.now() - t0) / (dur * 1000), 0, 1);
+      const t = clamp((clock.t - t0) / dur, 0, 1);
       fn(t); if (t >= 1) return res(true);
       requestAnimationFrame(tick);
     })();
   });
 }
-const wait = s => anim(s, () => {});
 function flyTo(to, dur) {
   const a = cam.target.clone(), ra = a.length(), b = to.target.clone(), rb = b.length();
   const an = a.clone().normalize(), bn = b.clone().normalize(), ang = an.angleTo(bn), gkm = ang * R;
   const d0 = cam.dist, d1 = to.dist, h0 = cam.heading, t0 = cam.tilt;
-  const peak = Math.max(d0, d1, gkm * 1.1);
+  const peak = Math.max(d0, d1, gkm * 1.1 * fitClose);
   const bump = Math.log(peak) - Math.max(Math.log(d0), Math.log(d1));
   const span = Math.log(peak / Math.min(d0, d1));
   const veil = state.clouds * clamp((span - 2.2) / 2.4, 0, .95);
@@ -749,39 +1094,137 @@ function flyTo(to, dur) {
 const PL = {
   ict: { lat: 37.650, lon: -97.433, name: 'Wichita (ICT)', flip: 1 }, ord: { lat: 41.978, lon: -87.905, name: "Chicago O'Hare" },
   den: { lat: 39.856, lon: -104.674, name: 'Denver (DEN)', flip: 1 }, muc: { lat: 48.354, lon: 11.786, name: 'Munich Airport' },
-  munich: { lat: 48.137, lon: 11.575, name: 'Munich' }, ibk: { lat: 47.2686, lon: 11.3933, name: 'Innsbruck' },
-  nue: { lat: 49.4521, lon: 11.0767, name: 'Nuremberg' }, neu: { lat: 47.5576, lon: 10.7498, name: 'Neuschwanstein' },
+  munich: { lat: 48.137, lon: 11.575, name: 'Munich', min: 8 }, ibk: { lat: 47.2686, lon: 11.3933, name: 'Innsbruck', min: 8 },
+  nue: { lat: 49.4521, lon: 11.0767, name: 'Nuremberg', min: 8 }, neu: { lat: 47.5576, lon: 10.7498, name: 'Neuschwanstein', min: 6 },
   hilton: { lat: 48.1283, lon: 11.5925, name: 'Hilton Munich City', minor: 1, max: 45 },
-  mond: { lat: 47.2700, lon: 11.3920, name: 'Hotel Mondschein', minor: 1, max: 30 },
-  dom: { lat: 47.2690, lon: 11.3935, name: 'Dom St. Jakob', minor: 1, max: 14, dy: 14 },
-  nord: { lat: 47.3105, lon: 11.3838, name: 'Nordkette · 2,334 m', minor: 1, max: 60 },
-  frau: { lat: 48.1386, lon: 11.5736, name: 'Frauenkirche', minor: 1, max: 30, dy: 14 },
+  mond: { lat: 47.2700, lon: 11.3920, name: 'Hotel Mondschein', minor: 1, max: 30, min: 2.5 },
+  hafe: { lat: 47.3125, lon: 11.3864, name: 'Hafelekar · 2,334 m', minor: 1, max: 60 },
   inn: { lat: 47.282, lon: 11.505, name: 'River Inn', minor: 1, max: 40 },
 };
 const US = new Set(['ict', 'ord', 'den']);
 const labelsEl = document.getElementById('labels');
 for (const [k, p] of Object.entries(PL)) {
   const el = document.createElement('div'); el.className = 'lbl' + (p.minor ? ' minor' : '') + (p.flip ? ' flip' : ''); el.textContent = p.name;
-  labelsEl.appendChild(el); p.el = el; p.k = k;
+  labelsEl.appendChild(el); p.el = el; p.k = k; p.v = null;
 }
-const _pv = new V3();
+const _pv = new V3(), _pw = new V3();
+function screenOf(pos) {   // CSS px, or null when behind the globe or off screen
+  if (_pw.copy(pos).normalize().dot(_pv.subVectors(camera.position, pos).normalize()) < -0.02) return null;
+  _pv.copy(pos).project(camera);
+  if (_pv.z > 1 || Math.abs(_pv.x) > 1.1 || Math.abs(_pv.y) > 1.1) return null;
+  return [(_pv.x + 1) / 2 * innerWidth, (1 - _pv.y) / 2 * innerHeight];
+}
 function updateLabels() {
-  const w = innerWidth, h = innerHeight, camN = camera.position.clone().normalize();
   for (const p of Object.values(PL)) {
-    const pos = ground(p.lat, p.lon, .05); p.v = pos;
-    const d = camera.position.distanceTo(pos);
-    let show = d < (p.max ?? (US.has(p.k) ? 30000 : 3500)) && (US.has(p.k) ? d > 250 : true);
-    if (p.k === 'munich' && d < 20) show = false;
-    const facing = pos.clone().normalize().dot(_pv.subVectors(camera.position, pos).normalize()) > -0.02;
-    _pv.copy(pos).project(camera);
-    show = show && facing && _pv.z < 1 && Math.abs(_pv.x) < 1.1 && Math.abs(_pv.y) < 1.1;
-    p.el.style.opacity = show ? 1 : 0;
-    if (show) p.el.style.transform = `translate(${((_pv.x + 1) / 2 * w - (p.flip ? p.el.offsetWidth - 4 : 4)).toFixed(1)}px, ${((1 - _pv.y) / 2 * h - 8 + (p.dy || 0)).toFixed(1)}px)`;
+    if (!p.v) p.v = ground(p.lat, p.lon, .05);
+    const d = camera.position.distanceTo(p.v);
+    const show = d < (p.max ?? (US.has(p.k) ? 30000 : 3500)) && (US.has(p.k) ? d > 250 : d > (p.min || 0));
+    const sc = show && screenOf(p.v);
+    p.el.style.opacity = sc ? 1 : 0;
+    if (sc) p.el.style.transform = `translate(${(sc[0] - (p.flip ? p.el.offsetWidth - 4 : 4)).toFixed(1)}px, ${(sc[1] - 8).toFixed(1)}px)`;
   }
 }
 
+/* ---------- waypoint stories ---------- */
+// Points of interest along each leg; left / right is worked out from the direction of travel.
+const POI = {
+  hilton: { lat: 48.1283, lon: 11.5925, t: 'Hilton Munich City', x: 'Rosenheimer Platz station sits right below the hotel. Bags can often be checked before the 4 pm check-in.' },
+  rosenheim: { lat: 47.8561, lon: 12.1289, t: 'Rosenheim', x: 'The Mangfall meets the Inn here. From Rosenheim the line follows the Inn south into the Alps.' },
+  wendelstein: { lat: 47.7036, lon: 12.0122, t: 'Wendelstein · 1,838 m', x: 'The peak with the observatory on top. Its cog railway, opened in 1912, is the oldest high-mountain railway in Germany.' },
+  border: { lat: 47.6080, lon: 12.1800, t: 'Into Austria', x: 'Just past Kiefersfelden the train crosses from Bavaria into Tyrol. Welcome to Austria.' },
+  kufstein: { lat: 47.5836, lon: 12.1706, t: 'Kufstein Fortress', x: 'First recorded in 1205. The Heroes’ Organ in its tower, the world’s largest open-air organ, plays every day at noon.' },
+  kaiser: { lat: 47.5650, lon: 12.3000, t: 'Wilder Kaiser', x: 'The jagged limestone wall east of the valley, topping out at 2,344 m on the Ellmauer Halt.' },
+  rattenberg: { lat: 47.4383, lon: 11.8933, t: 'Rattenberg', x: 'Austria’s smallest town, about 400 people, known for glass-blowing. The hill behind it keeps parts of town in shadow much of the winter.' },
+  schwaz: { lat: 47.3500, lon: 11.7083, t: 'Schwaz', x: 'In the 1500s one of Europe’s largest silver-mining centres. Its silver bankrolled the Fugger bankers and the Habsburg emperors.' },
+  wattens: { lat: 47.2944, lon: 11.6010, t: 'Swarovski Crystal Worlds', x: 'Swarovski has been based in Wattens since 1895. The museum hides under a grassy giant’s head with a waterfall for a mouth.' },
+  hall: { lat: 47.2833, lon: 11.5083, t: 'Hall in Tirol', x: 'Its mint struck the Guldiner in 1486, one of the first big silver coins. Its successors, the thalers, gave the dollar its name.' },
+  hafelekar: { lat: 47.3125, lon: 11.3864, t: 'Nordkette', x: 'From the old town, Zaha Hadid’s Hungerburg funicular and two cable cars climb to Hafelekar at 2,256 m in about 20 minutes.' },
+  ingolstadt: { lat: 48.7631, lon: 11.4250, t: 'Ingolstadt & the Danube', x: 'Audi’s home town, and where Mary Shelley sent Victor Frankenstein to university. The train crosses the Danube here.' },
+  hsl: { lat: 49.0000, lon: 11.3850, t: 'High-speed line', x: 'North of Ingolstadt the train joins a line built for 300 km/h, opened in 2006, much of it in tunnels through the Franconian Jura.' },
+  landsberg: { lat: 48.0478, lon: 10.8838, t: 'Landsberg am Lech', x: 'An old town on the Lech. Its Bayertor of 1425 is one of the finest Gothic gates in southern Germany.' },
+  schongau: { lat: 47.8125, lon: 10.8967, t: 'Schongau', x: 'A hilltop town still ringed by much of its medieval wall, with a walkway along the top.' },
+  wies: { lat: 47.6811, lon: 10.9002, t: 'Wieskirche', x: 'Worth a 10-minute detour from Steingaden: a Rococo pilgrimage church by Dominikus Zimmermann, finished in 1754 and a UNESCO World Heritage Site.' },
+  forggensee: { lat: 47.6050, lon: 10.7350, t: 'Forggensee', x: 'A huge reservoir on the Lech that is lowered every winter, so in December you may see a wide, empty lakebed.' },
+  greatcircle: { at: .32, t: 'Why the route bends north', x: 'On a globe the shortest path from Chicago to Munich arcs up over Canada and the North Atlantic. Flat maps make it look like a detour.' },
+  landfall: { at: .78, t: 'Landfall in Europe', x: 'Over Ireland and Britain, then across the Continent for the descent into Munich mid-morning.' },
+  ohare: { at: .9, t: 'O’Hare', x: 'An 8½-hour layover. The rest of the family meets the group here for the overnight flight.' },
+  heiliggeist: { lat: 48.1357, lon: 11.5770, t: 'Heilig-Geist-Kirche', x: 'Gothic bones under a Baroque skin by the Asam brothers, at the edge of the Viktualienmarkt.' },
+  peter: { lat: 48.1364, lon: 11.5757, t: 'Alter Peter', x: 'Munich’s oldest parish church. About 300 steps up the tower, no elevator, for a view to the Alps on a clear day.' },
+  marien: { lat: 48.1372, lon: 11.5755, t: 'Marienplatz', x: 'The Mariensäule, Mary as Patrona Bavariae, dates to 1638. The Christmas market fills the square; the Rathaus Glockenspiel plays at 11 am.' },
+  frauenMuc: { lat: 48.1386, lon: 11.5736, t: 'Frauenkirche', x: 'Mass at 8:30 am. Look for the Devil’s Footprint just inside the entrance. The 99 m towers set the height limit for the old town.' },
+  michael: { lat: 48.1388, lon: 11.5706, t: 'St. Michael', x: 'The largest Renaissance church north of the Alps. King Ludwig II, who built Neuschwanstein, is buried in its crypt.' },
+  buergersaal: { lat: 48.1392, lon: 11.5683, t: 'Bürgersaalkirche', x: 'The lower church holds the tomb of Bl. Rupert Mayer. The crypt closes at 5 pm.' },
+  asam: { lat: 48.1351, lon: 11.5696, t: 'Asamkirche', x: 'The Asam brothers’ private Rococo jewel: plain outside, breathtaking within. Free entry.' },
+  mondschein: { lat: 47.2700, lon: 11.3920, t: 'Hotel Mondschein', x: 'One of the colourful houses of Mariahilf on the Inn. River-view rooms look straight across at the old town.' },
+  ottoburg: { lat: 47.2689, lon: 11.3919, t: 'Ottoburg', x: 'A late-Gothic tower house first recorded in 1476, right where the Inn bridge comes in. Christmas Eve dinner, 5 pm.' },
+  dachl: { lat: 47.2686, lon: 11.3933, t: 'Goldenes Dachl', x: '2,657 fire-gilded copper tiles, finished around 1500 for Emperor Maximilian I to watch festivities in the square below.' },
+  dom: { lat: 47.2692, lon: 11.3938, t: 'Dom St. Jakob', x: 'Midnight Mass at 11:30 pm; arrive by 11 for seats. Lucas Cranach’s Mariahilf painting hangs above the high altar.' },
+  hofkirche: { lat: 47.2683, lon: 11.3956, t: 'Hofkirche', x: 'Emperor Maximilian I’s empty tomb, guarded by 28 larger-than-life bronze figures, the “Schwarze Mander”.' },
+  bergisel: { d: 1.8, lat: 47.2490, lon: 11.3995, t: 'Bergisel ski jump', x: 'Zaha Hadid’s 2002 tower above the 1964 and 1976 Olympic jumping hill. The Four Hills Tournament jumps here each January.' },
+  kaiserburg: { d: 1.3, lat: 49.4578, lon: 11.0758, t: 'Imperial Castle', x: 'Every Holy Roman Emperor from 1050 to 1571 stayed in this castle on the sandstone ridge above the old town.' },
+  hauptmarkt: { lat: 49.4540, lon: 11.0775, t: 'Hauptmarkt & Frauenkirche', x: 'Home of the Christkindlesmarkt. At noon the Frauenkirche clock’s electors circle the emperor. The market usually closes Dec 24, so check 2026 dates.' },
+  lorenz: { lat: 49.4509, lon: 11.0786, t: 'St. Lorenz', x: 'Twin Gothic spires, about 80 m. Inside hangs Veit Stoss’s carved Angelic Salutation of 1517–18.' },
+  hohensch: { d: 1.2, lat: 47.5553, lon: 10.7364, t: 'Hohenschwangau', x: 'Ludwig II grew up in this yellow castle, rebuilt by his father Maximilian II in the 1830s.' },
+  neusch: { d: 1.6, lat: 47.5576, lon: 10.7498, t: 'Neuschwanstein', x: 'Begun in 1869 and never finished; Ludwig lived here only 172 days. It inspired Disney’s Sleeping Beauty Castle.' },
+  marienbr: { d: 1.2, lat: 47.5562, lon: 10.7490, t: 'Marienbrücke', x: 'The classic castle view is from this bridge over the Pöllat gorge, but it is often closed in winter for ice and snow.' },
+};
+const poiEl = document.getElementById('poi');
+let pins = [];
+function setPins(list) {
+  pins.forEach(p => p.el.remove()); pins = [];
+  for (const p of list) {
+    if (!p.lat) continue;
+    const el = document.createElement('div'); el.className = 'pin'; el.innerHTML = '<i></i><span></span>'; el.lastChild.textContent = p.t;
+    labelsEl.appendChild(el); pins.push({ p, el });
+  }
+}
+let poiShown = null, poiSideShown = '';
+function showPoi(p, side = '') {
+  if (!state.stories) p = null;
+  if (p === poiShown && side === poiSideShown) return;
+  poiShown = p; poiSideShown = side;
+  pins.forEach(q => q.el.classList.toggle('on', q.p === p));
+  if (!p) { poiEl.classList.remove('show'); return; }
+  $('poiSide').textContent = side; $('poiTitle').textContent = p.t; $('poiText').textContent = p.x;
+  poiEl.classList.add('show');
+}
+function updatePins() {
+  for (const q of pins) {
+    if (!q.p.v) q.p.v = ground(q.p.lat, q.p.lon, .03);
+    const sc = state.stories && camera.position.distanceTo(q.p.v) < 90 && screenOf(q.p.v);
+    q.el.style.opacity = sc ? 1 : 0;
+    if (sc) q.el.style.transform = `translate(${(sc[0] - 6).toFixed(1)}px, ${(sc[1] - 6).toFixed(1)}px)`;
+  }
+}
+function placePois(path, list) {   // distance along the path and which side each waypoint is on
+  const out = [];
+  for (const p of list) {
+    if (p.at != null) { out.push({ p, s: p.at * path.len, side: 'Along the way' }); continue; }
+    const v = ground(p.lat, p.lon), n = path.nearest(v);
+    const tan = new V3(); path.at(n.s, new V3(), tan);
+    const up = path.p[n.i].clone().normalize(), right = new V3().crossVectors(tan, up), to = v.clone().sub(path.p[n.i]);
+    out.push({ p, s: n.s, side: n.d < .6 ? 'Coming up' : (to.dot(right) > 0 ? 'On your right' : 'On your left') });
+  }
+  return out.sort((a, b) => a.s - b.s);
+}
+function schedule(len, T0, stops) {   // time -> distance, easing off near each waypoint so there is time to read
+  const N = 800, v = len / T0, w = Math.max(.8, v * .3), tt = [0];
+  const speed = s => {
+    let slow = 0; for (const st of stops) slow = Math.max(slow, Math.exp(-(((s - st.s) / w) ** 2)));
+    const ramp = .18 + .82 * smooth(0, len * .05, s) * smooth(0, len * .05, len - s);
+    return v * ramp * (1 - .93 * slow);
+  };
+  for (let i = 1; i <= N; i++) tt.push(tt[i - 1] + (len / N) / speed((i - .5) / N * len));
+  const T = tt[N];
+  return {
+    T,
+    s(t) { const x = t * T; let lo = 0, hi = N; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (tt[m] < x) lo = m; else hi = m; } return (lo + (x - tt[lo]) / Math.max(1e-9, tt[hi] - tt[lo])) / N * len; },
+    near(s) { let best = null, bk = 0; for (const st of stops) { const k = Math.exp(-(((s - st.s) / w) ** 2)); if (k > bk) { bk = k; best = st; } } return { st: best, k: bk }; },
+  };
+}
+
 /* ---------- journey ---------- */
-const state = { clouds: 1, winter: 1, veil: 0, veilOff: new THREE.Vector2(), snow: 0, snowTarget: 0, orbit: 0, step: 0, progress: 0, playing: false };
+const state = { clouds: 1, winter: 1, stories: 1, veil: 0, veilOff: new THREE.Vector2(), snow: 0, snowTarget: 0, orbit: 0, step: 0, progress: 0, packMesh: null };
 const COL = { flight: 0xDDBB6C, train: 0xE2677A, car: 0x79C596 };
 const ICON = {
   flight: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 15.5v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V8.5l-8 5v2l8-2.5V19l-2.5 1.8V22l4-1.2 4 1.2v-1.2L13 19v-6z"/></svg>',
@@ -804,38 +1247,47 @@ function buildJourney(geo) {
   mk('mucNeu', 'car'); mk('mucDen', 'flight'); mk('denIct', 'flight'); mk('mucOrd', 'flight'); mk('ordIct', 'flight');
   for (const rv of geo.rivers) riverRibbon(groundPath(rv.pts, .03, .3), rv.name === 'Donau' ? .18 : .08);
 
-  const overview = () => ({ target: llv(47, -42), dist: 13500, tilt: 0, heading: 0 });
+  const ps = (...k) => k.map(x => POI[x]);
+  const southbound = ps('rosenheim', 'wendelstein', 'border', 'kufstein', 'kaiser', 'rattenberg', 'schwaz', 'wattens', 'hall', 'hafelekar');
+  const northbound = ps('hall', 'schwaz', 'rattenberg', 'kufstein', 'wendelstein', 'rosenheim');
+  const overview = () => far({ target: llv(47, -42), dist: 13500, tilt: 0, heading: 0 });
+  const munichHome = () => view(48.135, 11.58, 20, 50, 0);
+
   STEPS = [
     { id: 'overview', mode: 'flight', eyebrow: 'Dec 20 – 29, 2026', title: 'Wichita to the Alps and home again',
       meta: '8 travelers · 6 flights · 4 train rides · 1 drive', note: 'Press Next leg to follow the trip day by day. Drag to look around; scroll or pinch to zoom.',
       routes: [], run: async () => { await flyTo(overview()); orbitIdle(.6); } },
     { id: 'day1', mode: 'flight', eyebrow: 'Day 1 · Sun, Dec 20 · UA786', title: 'Wichita → Chicago O’Hare',
-      meta: '7:20 am – 9:32 am · 2h 12m · Boeing 737-800', note: 'Part of the family flies out of Wichita; the rest meet the group at O’Hare for an 8½-hour layover.',
-      routes: ['ictOrd'], run: () => flight([P.ictOrd], 'ictOrd', view(PL.ord.lat, PL.ord.lon, 900, 25, 60)) },
-    { id: 'day1b', day: 'day1', mode: 'flight', eyebrow: 'Day 1 → 2 · UA953 overnight', title: 'Chicago → Munich',
+      meta: '7:20 am – 9:32 am · 2h 12m · Boeing 737-800', note: 'Part of the family flies out of Wichita; the rest meet the group at O’Hare.',
+      routes: ['ictOrd'], run: () => flight(P.ictOrd, 'ictOrd', far(view(PL.ord.lat, PL.ord.lon, 900, 25, 60)), ps('ohare')) },
+    { id: 'day1b', day: 'day1', mode: 'flight', pack: 'munich', eyebrow: 'Day 1 → 2 · UA953 overnight', title: 'Chicago → Munich',
       meta: '6:00 pm – 9:35 am Mon · 8h 35m · Boeing 787-8', note: 'All eight together across the Atlantic, landing in Munich mid-morning on the 21st.',
-      routes: ['ordMuc'], run: () => flight([P.ordMuc], 'ordMuc', view(PL.muc.lat, PL.muc.lon, 70, 52, 210)) },
-    { id: 'day2', mode: 'train', eyebrow: 'Day 2 · Mon, Dec 21 · S-Bahn S1 / S8', title: 'Munich Airport → Rosenheimer Platz',
+      routes: ['ordMuc'], run: () => flight(P.ordMuc, 'ordMuc', view(PL.muc.lat, PL.muc.lon, 22, 58, 210), ps('greatcircle', 'landfall')) },
+    { id: 'day2', mode: 'train', pack: 'munich', eyebrow: 'Day 2 · Mon, Dec 21 · S-Bahn S1 / S8', title: 'Munich Airport → Rosenheimer Platz',
       meta: '~40–45 min · stop sits right below the Hilton', note: 'Settle in, fight the jet lag, and head out to the Christmas markets for dinner.',
-      routes: ['aptCity'], run: () => groundLeg(P.aptCity, 'aptCity', 'train', { end: view(48.135, 11.58, 16, 52, 300) }) },
-    { id: 'day3', mode: 'stay', eyebrow: 'Day 3 · Tue, Dec 22', title: 'Munich old town',
-      meta: 'Mass at the Frauenkirche 8:30 am · Catholic walking tour', note: 'A flat 2.5 km loop: Heilig-Geist, Alter Peter, Mariensäule, Frauenkirche, St. Michael, Bürgersaal, Asamkirche.',
-      routes: [], run: () => stay(view(48.1386, 11.5736, 15, 55, 200)) },
-    { id: 'day4', mode: 'train', eyebrow: 'Day 4 · Wed, Dec 23 · DB / ÖBB', title: 'Munich → Innsbruck',
-      meta: '~2.5 hrs · via Rosenheim & Kufstein, up the Inn valley', note: 'The line follows the River Inn into Tyrol, with the Karwendel and Nordkette rising on the right.',
-      routes: ['mucIbk'], run: () => groundLeg(P.mucIbk, 'mucIbk', 'train', { end: view(PL.ibk.lat, PL.ibk.lon, 9, 66, 335) }) },
-    { id: 'day5', mode: 'stay', snow: 1, eyebrow: 'Day 5 – 6 · Dec 24 – 25', title: 'Christmas in Innsbruck',
+      routes: ['aptCity'], run: () => groundLeg(P.aptCity, 'aptCity', 'train', { pois: ps('hilton'), end: view(48.1310, 11.585, 3.2, 62, 300) }) },
+    { id: 'day3', mode: 'stay', pack: 'munich', eyebrow: 'Day 3 · Tue, Dec 22', title: 'Munich old town',
+      meta: 'Mass at the Frauenkirche 8:30 am · Catholic walking tour', note: 'A flat 2.5 km loop through the old town. Each stop pops up in turn; press Next leg any time to move on.',
+      routes: [], tour: ps('heiliggeist', 'peter', 'marien', 'frauenMuc', 'michael', 'buergersaal', 'asam'),
+      run: (s) => tour(s.tour, view(48.1375, 11.5735, 3.4, 58, 200)) },
+    { id: 'day4', mode: 'train', pack: 'inn', eyebrow: 'Day 4 · Wed, Dec 23 · DB / ÖBB', title: 'Munich → Innsbruck',
+      meta: '~2.5 hrs · via Rosenheim & Kufstein, up the Inn valley', note: 'Watch for the stories as you pass: the line follows the River Inn into Tyrol.',
+      routes: ['mucIbk'], run: () => groundLeg(P.mucIbk, 'mucIbk', 'train', { pois: southbound, end: view(47.2700, 11.3925, 4.5, 66, 340) }) },
+    { id: 'day5', mode: 'stay', pack: 'inn', snow: 1, eyebrow: 'Day 5 – 6 · Dec 24 – 25', title: 'Christmas in Innsbruck',
       meta: 'Dinner at the Ottoburg 5:00 pm · Midnight Mass, Dom St. Jakob 11:30 pm', note: 'Hotel Mondschein sits on the Inn, under the snowy Nordkette. Christmas Day is free for the city and nearby getaways.',
-      routes: [], run: () => stay(view(PL.ibk.lat, PL.ibk.lon, 7.5, 68, 340), 1.2) },
-    { id: 'day7', mode: 'train', eyebrow: 'Day 7 · Sat, Dec 26 · ÖBB / DB', title: 'Innsbruck → Munich',
+      routes: [], tour: ps('mondschein', 'ottoburg', 'dachl', 'dom', 'hofkirche', 'bergisel'),
+      run: (s) => tour(s.tour, view(47.2686, 11.3933, 6.5, 68, 340), 1.2) },
+    { id: 'day7', mode: 'train', pack: 'inn', eyebrow: 'Day 7 · Sat, Dec 26 · ÖBB / DB', title: 'Innsbruck → Munich',
       meta: '~2.5 hrs · back to the Hilton Munich City for 3 nights', note: 'Down the Inn valley and out onto the Bavarian plain. Edelweiss cooking class sometime this stay.',
-      routes: ['mucIbk'], run: () => groundLeg(P.ibkMuc, 'mucIbk', 'train', { end: view(48.135, 11.58, 22, 50, 20) }) },
-    { id: 'day8', mode: 'train', eyebrow: 'Day 8 · Sun, Dec 27 · day trip', title: 'Nuremberg Christkindlesmarkt',
-      meta: '~1 hr each way by direct train', note: 'One of Germany’s oldest Christmas markets, dating to the 16th century.',
-      routes: ['mucNue'], run: () => groundLeg(P.mucNue, 'mucNue', 'train', { roundTrip: P.nueMuc, stop: view(PL.nue.lat, PL.nue.lon, 14, 55, 330) }) },
-    { id: 'day9', mode: 'car', eyebrow: 'Day 9 · Mon, Dec 28 · private car', title: 'Neuschwanstein',
+      routes: ['mucIbk'], run: () => groundLeg(P.ibkMuc, 'mucIbk', 'train', { pois: northbound, end: munichHome() }) },
+    { id: 'day8', mode: 'train', pack: 'nue', eyebrow: 'Day 8 · Sun, Dec 27 · day trip', title: 'Nuremberg',
+      meta: '~1 hr each way by ICE', note: 'One of Germany’s oldest Christmas markets, dating to the 16th century. The market usually ends on Christmas Eve, so check before you go.',
+      routes: ['mucNue'], run: () => groundLeg(P.mucNue, 'mucNue', 'train', { pois: ps('ingolstadt', 'hsl'), roundTrip: P.nueMuc,
+        tour: ps('kaiserburg', 'hauptmarkt', 'lorenz'), stop: view(PL.nue.lat, PL.nue.lon, 4, 58, 330) }) },
+    { id: 'day9', mode: 'car', pack: 'neu', eyebrow: 'Day 9 · Mon, Dec 28 · private car', title: 'Neuschwanstein',
       meta: '~2.5 hrs each way · timed-entry castle tickets', note: 'King Ludwig II’s unfinished fantasy castle, begun in 1869, above Hohenschwangau and the Alpsee.',
-      routes: ['mucNeu'], run: () => groundLeg(P.mucNeu, 'mucNeu', 'car', { roundTrip: P.neuMuc, stop: view(PL.neu.lat, PL.neu.lon, 8, 64, 175) }) },
+      routes: ['mucNeu'], run: () => groundLeg(P.mucNeu, 'mucNeu', 'car', { pois: ps('landsberg', 'schongau', 'wies', 'forggensee'), roundTrip: P.neuMuc,
+        tour: ps('hohensch', 'neusch', 'marienbr'), stop: view(PL.neu.lat, PL.neu.lon, 3.5, 62, 175) }) },
     { id: 'day10', mode: 'flight', eyebrow: 'Day 10 · Tue, Dec 29', title: 'Munich → home to Wichita',
       meta: 'Via Denver: UA9459 11:50 am, UA4788 → ICT 8:02 pm · Via Chicago: UA952, UA2762 → ICT 11:52 pm', note: 'The family splits for the trip home: six through Denver, two through O’Hare.',
       routes: ['mucDen', 'denIct', 'mucOrd', 'ordIct'], run: homeward },
@@ -844,81 +1296,105 @@ function buildJourney(geo) {
       routes: [], run: async () => { await flyTo(overview()); orbitIdle(.6); } },
   ];
 
-  async function flight(paths, key, end) {
-    const p = paths[0];
+  async function flight(p, key, end, pois = []) {
     const a = p.p[0].clone().normalize(), b = p.p[p.p.length - 1].clone().normalize();
     const mid = a.clone().add(b).normalize().multiplyScalar(R);
-    const fd = clamp(p.groundKm * 1.25, 1200, 11000);
+    const fd = clamp(p.groundKm * 1.25, 1200, 11000) * fit;
     if (!await flyTo({ target: mid, dist: fd, tilt: 12, heading: 0 })) return;
-    const T = reduceMotion ? .01 : clamp(3 + p.groundKm / 1400, 4, 8.5);
-    const m0 = mid.clone();
+    const T = reduceMotion ? .01 : clamp(3 + p.groundKm / 1400, 4, 8.5) + pois.length * 1.8;
+    const stops = placePois(p, pois), m0 = mid.clone(), bR = b.clone().multiplyScalar(R);
     const ok = await anim(T, t => {
       const e = ease(t), d = e * p.len;
       ROUTES[key].set('uReveal', d); drawPlane(plane, p, d);
-      cam.target.copy(m0).lerp(b.clone().multiplyScalar(R), e * .25).normalize().multiplyScalar(R);
+      cam.target.copy(m0).lerp(bR, e * .25).normalize().multiplyScalar(R);
       cam.dist = fd * (1 - .12 * e); state.progress = t * .8;
+      const near = stops.find(st => Math.abs(st.s - d) < p.len * .09);
+      showPoi(near ? near.p : null, near ? near.side : '');
     });
+    showPoi(null);
     if (!ok) return;
     plane.visible = false;
     await flyTo(end); state.progress = 1;
   }
   async function groundLeg(path, key, kind, o = {}) {
     const draw = kind === 'train' ? drawTrain : drawVan;
-    const start = path.p[0], tan0 = new V3(); path.at(0.5, new V3(), tan0);
-    const h0 = headingOf(start, tan0);
-    if (!await flyTo({ target: start.clone(), dist: 14, tilt: 58, heading: h0 })) return;
-    const T = reduceMotion ? .01 : clamp(path.len / 11, 6, 13);
-    let hd = h0;
-    const ok = await anim(T, t => {
-      const e = t < .08 ? t * t / .16 : t > .92 ? 1 - (1 - t) * (1 - t) / .16 : t - .04;   // gentle start/stop
-      const d = clamp(e, 0, 1) * path.len, pos = draw(path, d);
-      ROUTES[key].set('uReveal', o.roundTrip ? d : (path === ROUTES[key].path ? d : ROUTES[key].path.len));
-      path.at(Math.min(path.len, d + 3), _tp, _tan);
-      hd = lerpAngle(hd, headingOf(pos, _tan), .04);
-      cam.target.copy(pos); cam.heading = hd; cam.dist = 13 + 22 * Math.sin(Math.PI * t); cam.tilt = 60 - 8 * Math.sin(Math.PI * t);
+    const tan0 = new V3(); path.at(0.5, new V3(), tan0);
+    const h0 = headingOf(path.p[0], tan0);
+    setPins(o.pois || []);
+    const stops = placePois(path, o.pois || []);
+    if (!await flyTo({ target: path.p[0].clone(), dist: 7 * fitClose, tilt: 62, heading: h0 })) return;
+    const T0 = reduceMotion ? .01 : clamp(path.len / 9, 5, 16);
+    const sch = schedule(path.len, T0, state.stories ? stops : []);
+    let hd = h0, look = 0;
+    const camTarget = new V3();
+    const ok = await anim(reduceMotion ? .01 : sch.T, t => {
+      const d = sch.s(t), pos = draw(path, d);
+      ROUTES[key].set('uReveal', path === ROUTES[key].path ? d : ROUTES[key].path.len);
+      path.at(Math.min(path.len, d + 2), _tp, _tan);
+      const nr = sch.near(d), k = nr.k;
+      let want = headingOf(pos, _tan);
+      if (nr.st && nr.st.p.lat && k > .05) {               // turn the camera toward the waypoint
+        nr.st.p.v = nr.st.p.v || ground(nr.st.p.lat, nr.st.p.lon, .03);
+        want = lerpAngle(want, headingOf(pos, nr.st.p.v.clone().sub(pos).normalize()), .55 * k);
+        camTarget.copy(pos).lerp(nr.st.p.v, .35 * k);
+      } else camTarget.copy(pos);
+      hd = lerpAngle(hd, want, .05); look = lerp(look, k, .05);
+      cam.target.copy(camTarget); cam.heading = hd;
+      cam.dist = (6.5 + 9 * Math.sin(Math.PI * t) * (1 - look)) * fitClose; cam.tilt = 64 - 6 * Math.sin(Math.PI * t);
+      showPoi(k > .35 && nr.st ? nr.st.p : null, nr.st ? nr.st.side : '');
       state.progress = t * (o.roundTrip ? .45 : .85);
     });
+    showPoi(null);
     if (!ok) return;
     if (o.roundTrip) {
-      if (!await flyTo(o.stop, 2.4)) return;
-      if (!await anim(3.2, t => { cam.heading += .12; state.progress = .45 + t * .15; })) return;
-      const back = o.roundTrip, ends = [back.p[0], back.p[back.p.length - 1]];
-      const mid = ends[0].clone().add(ends[1]).multiplyScalar(.5);
-      if (!await flyTo({ target: mid, dist: back.len * 1.15 + 20, tilt: 30, heading: 0 }, 2)) return;
+      if (!await tour(o.tour, o.stop, 0, true)) return;
+      const back = o.roundTrip, mid = back.p[0].clone().add(back.p[back.p.length - 1]).multiplyScalar(.5);
+      setPins([]);
+      if (!await flyTo({ target: mid, dist: (back.len * 1.15 + 20) * fit, tilt: 30, heading: 0 }, 2)) return;
       if (!await anim(reduceMotion ? .01 : 4, t => { draw(back, ease(t) * back.len); state.progress = .6 + t * .4; })) return;
       hideVehicles();
-      await flyTo(view(48.135, 11.58, 20, 50, 0), 2);
+      await flyTo(munichHome(), 2);
     } else {
+      hideVehicles();
       await flyTo(o.end, 2.4);
       orbitIdle(.8);
     }
     state.progress = 1;
   }
-  async function stay(v, rate = 1) {
-    hideVehicles();
-    if (!await flyTo(v)) return;
-    state.progress = 1; orbitIdle(rate);
-  }
   async function homeward() {
     const a = P.mucDen, b = P.denIct, c = P.mucOrd, d2 = P.ordIct;
-    const mid = llv(52, -40), fd = 11500;
-    if (!await flyTo({ target: mid, dist: fd, tilt: 8, heading: 0 })) return;
-    const T = reduceMotion ? .01 : 8;
-    let ok = await anim(T, t => {
+    if (!await flyTo({ target: llv(52, -40), dist: 11500 * fit, tilt: 8, heading: 0 })) return;
+    let ok = await anim(reduceMotion ? .01 : 8, t => {
       const e = ease(t);
       ROUTES.mucDen.set('uReveal', e * a.len); ROUTES.mucOrd.set('uReveal', e * c.len);
       drawPlane(plane, a, e * a.len); drawPlane(plane2, c, e * c.len); state.progress = t * .6;
     });
     if (!ok) return;
-    if (!await flyTo(view(39.2, -96, 2600, 15, 0), 2.5)) return;
+    if (!await flyTo(far(view(39.2, -96, 2600, 15, 0)), 2.5)) return;
     ok = await anim(reduceMotion ? .01 : 4, t => {
       const e = ease(t);
       ROUTES.denIct.set('uReveal', e * b.len); ROUTES.ordIct.set('uReveal', e * d2.len);
       drawPlane(plane, b, e * b.len); drawPlane(plane2, d2, e * d2.len); state.progress = .6 + t * .4;
     });
     if (!ok) return;
-    await flyTo(view(PL.ict.lat, PL.ict.lon, 1400, 20, 0), 2);
+    hideVehicles();
+    await flyTo(far(view(PL.ict.lat, PL.ict.lon, 1400, 20, 0)), 2);
   }
+}
+// Visit each stop in turn with its story, then settle back on the view of the whole place.
+async function tour(stops, base, rate = 1, partOfLeg = false) {
+  hideVehicles(); setPins(stops);
+  if (!await flyTo(base, partOfLeg ? 2.4 : undefined)) return false;
+  for (let i = 0; i < stops.length; i++) {
+    const p = stops[i];
+    if (!await flyTo(view(p.lat, p.lon, p.d || 1.1, 60, (cam.heading + 35) % 360), 2)) return false;
+    showPoi(p, `Stop ${i + 1} of ${stops.length}`);
+    if (!await anim(reduceMotion ? 3 : 5.5, t => { cam.heading += .06 * clock.speed; state.progress = (i + t) / stops.length * (partOfLeg ? .15 : 1) + (partOfLeg ? .45 : 0); })) return false;
+  }
+  showPoi(null);
+  if (!await flyTo(base, 2)) return false;
+  if (!partOfLeg) { state.progress = 1; orbitIdle(rate); }
+  return true;
 }
 function orbitIdle(rate) { state.orbit = reduceMotion ? 0 : rate; }
 
@@ -929,11 +1405,12 @@ function renderUI() {
   $('mode').dataset.mode = s.mode; $('mode').innerHTML = ICON[s.mode];
   $('eyebrow').textContent = s.eyebrow; $('title').textContent = s.title; $('meta').textContent = s.meta; $('note').textContent = s.note;
   $('prev').disabled = state.step === 0;
-  $('next').textContent = state.step === STEPS.length - 1 ? 'Start over ↺' : 'Next leg →';
+  $('next').textContent = state.step === STEPS.length - 1 ? 'Start over ↺' : (phone() ? 'Next →' : 'Next leg →');
   [...$('dots').children].forEach((d, i) => {
     d.classList.toggle('done', i < state.step);
-    if (i === state.step) d.setAttribute('aria-current', 'step'); else d.removeAttribute('aria-current');
+    if (i === state.step) { d.setAttribute('aria-current', 'step'); d.scrollIntoView({ block: 'nearest', inline: 'center' }); } else d.removeAttribute('aria-current');
   });
+  viewKey = ''; updateViewOffset();
 }
 function setRouteStyles(i) {
   const active = new Set(STEPS[i].routes);
@@ -944,17 +1421,21 @@ function setRouteStyles(i) {
     else { r.set('uAlpha', i === 0 || i === STEPS.length - 1 ? .75 : .2); r.set('uReveal', r.path.len); }
   }
 }
-async function go(i, fromPlay) {
-  token.dead = true; token = { dead: false }; const my = token;
-  if (!fromPlay) state.playing = false;
+function setPaused(p) {
+  clock.speed = p ? 0 : 1;
+  $('pause').innerHTML = p ? '&#9654;' : '&#10074;&#10074;';
+  $('pause').setAttribute('aria-label', p ? 'Play' : 'Pause');
+}
+async function go(i) {
+  token.dead = true; token = { dead: false };
+  setPaused(false);
   state.step = (i + STEPS.length) % STEPS.length; state.progress = 0; state.orbit = 0; state.veil = 0;
   const s = STEPS[state.step];
   state.snowTarget = s.snow ? 1 : 0;
-  hideVehicles(); setRouteStyles(state.step); renderUI();
+  hideVehicles(); setRouteStyles(state.step); renderUI(); showPoi(null); setPins([]);
   try { if (location.hash !== '#' + s.id) history.replaceState(null, '', '#' + s.id); } catch (e) {}
-  await s.run();
-  if (my.dead) return;
-  if (s.routes.length && s.mode !== 'flight') hideVehicles();
+  usePack(s.pack);                      // detail loads while the camera is still flying in
+  await s.run(s);
 }
 function buildDots() {
   STEPS.forEach((s, i) => {
@@ -969,14 +1450,16 @@ addEventListener('hashchange', () => {
 });
 $('next').onclick = () => go(state.step + 1);
 $('prev').onclick = () => go(state.step - 1);
+$('pause').onclick = () => setPaused(clock.speed !== 0);
 addEventListener('keydown', e => {
   if (e.target.closest && e.target.closest('button') && (e.key === ' ' || e.key === 'Enter')) return;
   if (e.key === 'ArrowRight') go(state.step + 1); else if (e.key === 'ArrowLeft') go(state.step - 1);
+  else if (e.key === ' ') { e.preventDefault(); setPaused(clock.speed !== 0); }
 });
-function toggle(btn, key) {
-  btn.onclick = () => { state[key] = state[key] ? 0 : 1; btn.setAttribute('aria-pressed', state[key] ? 'true' : 'false'); };
+function toggle(btn, key, after) {
+  btn.onclick = () => { state[key] = state[key] ? 0 : 1; btn.setAttribute('aria-pressed', state[key] ? 'true' : 'false'); after && after(); };
 }
-toggle($('tWinter'), 'winter'); toggle($('tClouds'), 'clouds');
+toggle($('tWinter'), 'winter'); toggle($('tClouds'), 'clouds'); toggle($('tStories'), 'stories', () => { if (!state.stories) showPoi(null); });
 
 /* ---------- pointer: drag to look around, wheel / pinch to zoom ---------- */
 const pts = new Map(); let pinch0 = 0;
@@ -987,47 +1470,53 @@ cv.addEventListener('pointermove', e => {
   const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
   if (pts.size === 2) {
     const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
-    if (pinch0) cam.dist = clamp(cam.dist * pinch0 / d, 2, 30000); pinch0 = d; return;
+    if (pinch0) cam.dist = clamp(cam.dist * pinch0 / d, .6, 30000); pinch0 = d; return;
   }
-  if (cam.dist > 600) {   // high up: spin the globe
+  if (cam.dist > 600) {
     const f = enu(cam.target), k = cam.dist / R * .0022;
     cam.target.applyAxisAngle(f.north, -dx * k).applyAxisAngle(f.east, dy * k);
-  } else { cam.heading -= dx * .25; cam.tilt = clamp(cam.tilt - dy * .2, 0, 78); }
+  } else { cam.heading -= dx * .25; cam.tilt = clamp(cam.tilt - dy * .2, 0, 80); }
 });
 const up = e => { pts.delete(e.pointerId); pinch0 = 0; };
 cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
-cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist = clamp(cam.dist * Math.exp(e.deltaY * .0012), 2, 30000); }, { passive: false });
+cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist = clamp(cam.dist * Math.exp(e.deltaY * .0012), .6, 30000); }, { passive: false });
 
 /* ---------- frame loop ---------- */
 function resize() {
-  const w = innerWidth, h = innerHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+  const w = innerWidth, h = innerHeight; renderer.setSize(w, h); camera.aspect = w / h;
   uni.uRes.value.set(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
   uni.uFocal.value = uni.uRes.value.y / (2 * Math.tan(camera.fov * D2R / 2));
   snowCv.width = w * devicePixelRatio; snowCv.height = h * devicePixelRatio;
+  viewKey = ''; updateViewOffset();
 }
 addEventListener('resize', resize); resize();
-const bgSpace = new THREE.Color(0x03060c), bgSky = new THREE.Color(0x9fb4cc), bg = new THREE.Color();
+const bgSpace = new THREE.Color(0x03060c), bgSky = new THREE.Color(0x9fb4cc), bg = new THREE.Color(), snowWhite = new THREE.Color(0xf2f5f8);
 let last = performance.now(), winterV = 1;
 function frame(now) {
-  const dt = Math.min(.05, (now - last) / 1000); last = now;
-  uni.uTime.value += dt;
-  if (state.orbit) cam.heading += state.orbit * dt * 2.2;
+  const dt = Math.min(DEBUG ? 1 : .1, (now - last) / 1000); last = now;
+  clock.t += dt * clock.speed;
+  uni.uTime.value += dt * clock.speed;
+  if (state.orbit) cam.heading += state.orbit * dt * 2.2 * clock.speed;
+  updateViewOffset();
   const alt = applyCam(); uni.uAlt.value = alt;
-  // camera-relative sun for the globe so the visible side is always lit
   const right = new V3().setFromMatrixColumn(camera.matrixWorld, 0), cup = new V3().setFromMatrixColumn(camera.matrixWorld, 1);
   uni.uSun.value.copy(camera.position).normalize().multiplyScalar(R).addScaledVector(right, -R * .9).addScaledVector(cup, R * .7).normalize();
-  keyLight.position.copy(camera.position).addScaledVector(cup, cam.dist).addScaledVector(right, -cam.dist * .5);
+  keyLight.position.copy(cam.target).addScaledVector(uni.uRegionSun.value, 50);
   keyLight.target.position.copy(cam.target);
   winterV = lerp(winterV, state.winter, .08);
   uni.uWinter.value = winterV; uni.uSnowLine.value = lerp(3400, 1300, winterV); uni.uFrost.value = .15 * winterV;
+  for (const r of roofMats) r.m.color.copy(r.base).lerp(snowWhite, .7 * winterV);
+  const du = terrainMat.uniforms.uDetOn; if (terrainMat.uniforms.det.value) du.value = Math.min(1, du.value + dt * 1.5);
+  if (state.packMesh) { const f = state.packMesh.material.uniforms.uFade; f.value = Math.min(1, f.value + dt * 1.2); }
+  landmarkGroup.visible = cam.dist < 60;
   cloudShell.material.uniforms.uOn.value = lerp(cloudShell.material.uniforms.uOn.value, state.clouds, .1);
   stars.material.opacity = smooth(300, 2500, alt);
   bg.copy(bgSky).lerp(bgSpace, smooth(25, 900, alt)); renderer.setClearColor(bg);
   updateSprites(dt, alt);
   veilMat.uniforms.uCover.value = state.veil; veilMat.uniforms.uOff.value.copy(state.veilOff);
   state.snow = lerp(state.snow, state.snowTarget * winterV * (cam.dist < 40 ? 1 : 0), .04);
-  drawSnow(dt, state.snow);
-  updateLabels();
+  drawSnow(dt * clock.speed, state.snow);
+  updateLabels(); updatePins();
   $('prog').style.width = (state.progress * 100).toFixed(1) + '%';
   renderer.clear(); renderer.render(scene, camera);
   if (state.veil > .002) renderer.render(veilScene, veilCam);
@@ -1035,9 +1524,11 @@ function frame(now) {
 }
 
 /* ---------- boot ---------- */
-const loadTex = (url, srgb = true) => new Promise((res, rej) => new THREE.TextureLoader().load(url, t => {
-  if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); res(t);
-}, undefined, rej));
+function loadTex(url, srgb = true) {
+  return new Promise((res, rej) => new THREE.TextureLoader().load(url, t => {
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); res(t);
+  }, undefined, rej));
+}
 function loadHeight(url) {
   return new Promise((res, rej) => {
     const img = new Image(); img.onload = () => {
@@ -1067,9 +1558,10 @@ function loadHeight(url) {
       fetch('assets/geo.json').then(r => r.json()),
     ]);
     HF = hm.f; terrainMat.uniforms.map.value = region; terrainMat.uniforms.ibk.value = ibk; terrainMat.uniforms.hmap.value = hm.t;
-    buildTerrain(); buildSprites(); buildJourney(geo); buildDots();
+    buildTerrain(); buildSprites(); buildLandmarks(); buildJourney(geo); buildDots();
     requestAnimationFrame(frame);
     $('loading').classList.add('gone');
+    if (DEBUG) window.__dbg = { set: (la, lo, d, t, h) => { token.dead = true; token = { dead: false }; state.orbit = 0; state.veil = 0; Object.assign(cam, view(la, lo, d, t, h)); }, cam, view, go, state, usePack, clock, setPaused, POI, scene };
     const h = location.hash.slice(1), start = Math.max(0, STEPS.findIndex(s => s.id === h || s.day === h));
     go(start);
   } catch (err) {

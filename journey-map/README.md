@@ -21,6 +21,21 @@ the file directly from disk won't load the map data).
   the edge of the detailed patch, and a full-screen cloud pass during big
   zooms (globe ↔ valley) that hides the change in detail.
 - Snowfall in Innsbruck on Christmas Eve.
+- Waypoint stories: as the train or car passes something worth seeing, the
+  vehicle slows, the camera turns toward it and a card says what it is and
+  whether it's on your left or right. Stays (Munich, Innsbruck) and the day-trip
+  stops (Nuremberg, Neuschwanstein) become short tours, one stop at a time.
+  The "Stories" chip turns them off; the pause button freezes any leg.
+- Detail near the routes: 10 m/pixel Sentinel-2 imagery along every rail and
+  road corridor and around each stop, loaded one leg at a time (`assets/packs`).
+- 3D buildings for every town the routes pass and the stop cities (Overture
+  Maps / OpenStreetMap footprints and heights), with snowy roofs in winter.
+- Hand-built landmark models: Frauenkirche, Neues Rathaus, Alter Peter and
+  St. Michael in Munich; Dom St. Jakob, Hofkirche, Goldenes Dachl and Bergisel
+  in Innsbruck; Kaiserburg, St. Lorenz and the Frauenkirche in Nuremberg;
+  Neuschwanstein, Hohenschwangau, the Wieskirche and Kufstein fortress.
+- Phone layout: the camera frames the action in the space between the header
+  and the card, and wide shots pull back further on narrow screens.
 
 ## Linking from the itinerary
 
@@ -46,8 +61,10 @@ snapping). They expect a `data/` working folder and `rasterio`, `mgrs`,
 - Swap the code-built vehicles for Blender models: export `.glb` files and load
   them with three.js `GLTFLoader` in place of `makePlane`, `makeTrainCar` and
   `makeVan`.
-- Sharper close-ups: stream map tiles (for example MapTiler or Cesium ion,
-  both need a free API key) instead of the single baked image.
-  Right now the image is about 95 m per pixel for the region and 30 m per
-  pixel around Innsbruck.
+- Photo-real cities: Google's Photorealistic 3D Tiles cover Munich, Innsbruck
+  and Nuremberg with real photogrammetry (needs a Google Maps API key and its
+  attribution rules). Bavaria also publishes free LoD2 building models with
+  real roof shapes.
+- Sharper terrain: the elevation grid is 150 m; a finer grid along the Inn
+  valley and around Neuschwanstein would sharpen the ridgelines.
 - Day-of-trip details on tap (hotel, Mass times, reservations).
