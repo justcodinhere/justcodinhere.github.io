@@ -181,6 +181,18 @@
     max-width: calc(100vw - 32px); transition: opacity .4s, transform .4s; z-index: 6;
   }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  /* Explore pill: floats just above the journey card while the viewer looks around on their own (bottom set from JS) */
+  .explore {
+    left: 50%; bottom: 200px; transform: translate(-50%, 8px); opacity: 0; visibility: hidden;
+    display: flex; align-items: center; gap: 10px; padding: 4px 4px 4px 14px; border-radius: 999px; box-sizing: border-box;
+    max-width: calc(100vw - 32px); background: var(--glass); border: 1px solid var(--glass-line);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(0,0,0,.45);
+    transition: opacity .3s, transform .3s, visibility 0s .3s;
+  }
+  .explore.show { opacity: 1; visibility: visible; transform: translate(-50%, 0); transition: opacity .3s, transform .3s; }
+  .ex-hint { font: 500 11px/1.2 var(--font-mono); letter-spacing: .04em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .explore .btn { border-radius: 999px; min-height: 40px; display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+  .explore .btn svg { width: 16px; height: 16px; flex: 0 0 auto; }
   .credit.google { color: var(--ink); font-size: 11px; display: block; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
   #loading {
     position: fixed; inset: 0; z-index: 9; display: grid; place-items: center; background: var(--night);
@@ -213,6 +225,7 @@
     .controls { flex-wrap: wrap; row-gap: 8px; }
     .dots { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-block: 1px; }
     #pause { margin-left: auto; }
+    .explore .btn { min-height: 44px; }
     .dots::-webkit-scrollbar { display: none; }
     .credit { display: none; }
   }
@@ -258,6 +271,11 @@
     <button class="btn small primary" id="poiNext">Continue &rarr;</button>
   </div>
 </aside>
+
+<div class="ui explore" id="explore" role="group" aria-label="Exploring the map">
+  <span class="ex-hint" id="exHint">Exploring</span>
+  <button class="btn primary" id="backTour"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>Back to tour</button>
+</div>
 
 <div class="ui dock" id="dock">
   <section class="card" aria-live="polite">
@@ -1097,23 +1115,33 @@ function drawSnow(dt, amt) {
 }
 
 /* ---------- camera rig ---------- */
-const cam = { target: llv(37.65, -97.43), dist: 9000, heading: 0, tilt: 0 };
-function applyCam() {
-  const f = enu(cam.target), h = cam.heading * D2R, t = cam.tilt * D2R;
+// Two rigs. tcam is where the journey wants the camera: flights, legs, tours and idle orbits all write it.
+// cam is what is drawn (and what features see as ctx.cam). They match, except while the viewer explores:
+// then cam follows their hands, the journey holds still, and "Back to tour" blends cam onto the live tcam.
+// sx (px, optional) slides the target sideways on screen, for shots that keep clear of the story card.
+const cam = { target: llv(37.65, -97.43), dist: 9000, heading: 0, tilt: 0, sx: 0 };
+const tcam = { target: cam.target.clone(), dist: 9000, heading: 0, tilt: 0, sx: 0 };
+const rig = (o = {}) => ({ target: new V3(), dist: 1, heading: 0, tilt: 0, sx: 0, ...o });
+function copyRig(o, s) { o.target.copy(s.target); o.dist = s.dist; o.heading = s.heading; o.tilt = s.tilt; o.sx = s.sx || 0; return o; }
+// Point camera c (the real one, or a scratch copy used for framing) at rig r. Returns its height in km.
+function poseCamera(c, r) {
+  const f = enu(r.target), h = r.heading * D2R, t = r.tilt * D2R;
   const fwd = f.north.clone().multiplyScalar(Math.cos(h)).addScaledVector(f.east, Math.sin(h));
-  camera.position.copy(cam.target).addScaledVector(f.up, Math.cos(t) * cam.dist).addScaledVector(fwd, -Math.sin(t) * cam.dist);
-  // keep the camera above the terrain in tight valley shots
-  const cl = camera.position.clone().normalize(), lat = Math.asin(cl.y) / D2R, lon = Math.atan2(cl.x, cl.z) / D2R;
-  const floor = R + terrainKm(lat, lon) + .35;
-  if (camera.position.length() < floor) camera.position.setLength(floor);
-  camera.up.copy(fwd).multiplyScalar(Math.cos(t)).addScaledVector(f.up, Math.sin(t));
-  camera.lookAt(cam.target);
-  const alt = Math.max(.05, camera.position.length() - R);
-  camera.near = clamp(Math.min(alt, cam.dist) * .03, .004, 2000);
-  camera.far = Math.sqrt(alt * (2 * R + alt)) + 600 + cam.dist;
-  camera.updateProjectionMatrix();
+  c.position.copy(r.target).addScaledVector(f.up, Math.cos(t) * r.dist).addScaledVector(fwd, -Math.sin(t) * r.dist);
+  // keep the camera above the terrain (the height field and the coarser mesh drawn from it) in tight valley shots
+  const cl = c.position.clone().normalize(), lat = Math.asin(cl.y) / D2R, lon = Math.atan2(cl.x, cl.z) / D2R;
+  const floor = R + Math.max(terrainKm(lat, lon), meshKm(lat, lon)) + clamp(r.dist * .3, .12, .35);
+  if (c.position.length() < floor) c.position.setLength(floor);
+  c.up.copy(fwd).multiplyScalar(Math.cos(t)).addScaledVector(f.up, Math.sin(t));
+  c.lookAt(r.target);
+  const alt = Math.max(.05, c.position.length() - R);
+  c.near = clamp(Math.min(alt, r.dist) * .03, .004, 2000);
+  c.far = Math.sqrt(alt * (2 * R + alt)) + 600 + r.dist;
+  if (c.view) c.view.offsetX = -(r.sx || 0);
+  c.updateProjectionMatrix(); c.updateMatrixWorld();
   return alt;
 }
+function applyCam() { return poseCamera(camera, cam); }
 // Shift the picture so the focus sits in the open area between the header and the card,
 // and work out how much further back wide shots need to sit on a narrow screen.
 let viewKey = '', fit = 1, fitClose = 1;
@@ -1126,6 +1154,7 @@ function updateViewOffset() {
   if (key === viewKey) return;
   viewKey = key;
   camera.setViewOffset(w, h, 0, off, w, h);
+  exploreEl.style.bottom = Math.round(h - cardTop + 10) + 'px';     // the explore pill rides just above the card
   const tf = Math.tan(camera.fov * D2R / 2), visH = Math.max(120, cardTop - topRes);
   const ref = tf * 540 / 800, cur = Math.min(tf * visH / h, tf * w / h);
   fit = clamp(ref / cur, 1, 2.4); fitClose = Math.sqrt(fit);
@@ -1148,28 +1177,195 @@ function anim(dur, fn) {
     })();
   });
 }
-function flyTo(to, dur) {
-  const a = cam.target.clone(), ra = a.length(), b = to.target.clone(), rb = b.length();
-  const an = a.clone().normalize(), bn = b.clone().normalize(), ang = an.angleTo(bn), gkm = ang * R;
-  const d0 = cam.dist, d1 = to.dist, h0 = cam.heading, t0 = cam.tilt;
+// The way flyTo travels from rig a to rig b: along the great circle, climbing out for long hops.
+// a is captured now; b's heading and tilt are read as it goes.
+function hop(a, b) {
+  const an = a.target.clone().normalize(), ra = a.target.length(), bn = b.target.clone().normalize(), rb = b.target.length();
+  const ang = an.angleTo(bn), gkm = ang * R, d0 = a.dist, d1 = b.dist, h0 = a.heading, t0 = a.tilt, s0 = a.sx || 0;
   const peak = Math.max(d0, d1, gkm * 1.1 * fitClose);
-  const bump = Math.log(peak) - Math.max(Math.log(d0), Math.log(d1));
-  const span = Math.log(peak / Math.min(d0, d1));
-  const veil = state.clouds * clamp((span - 2.2) / 2.4, 0, .95);
-  dur = dur ?? clamp(1.4 + .55 * Math.log(1 + gkm / 20) + .25 * span, 1.6, 6.5);
-  if (reduceMotion) dur = .01;
+  const bump = Math.log(peak) - Math.max(Math.log(d0), Math.log(d1)), span = Math.log(peak / Math.min(d0, d1));
   const axis = new V3().crossVectors(an, bn); if (axis.lengthSq() < 1e-12) axis.set(0, 1, 0); axis.normalize();
   const q = new THREE.Quaternion();
-  return anim(dur, t => {
-    const e = ease(t), arc = Math.sin(Math.PI * e);
+  return { gkm, span, at(o, e) {           // write the rig at eased time e into o; returns how high up the arc it is
+    const arc = Math.sin(Math.PI * e);
     q.setFromAxisAngle(axis, ang * e);
-    cam.target.copy(an).applyQuaternion(q).multiplyScalar(lerp(ra, rb, e));
-    cam.dist = Math.exp(lerp(Math.log(d0), Math.log(d1), e) + Math.max(0, bump) * arc);
-    cam.heading = lerpAngle(h0, to.heading, e);
-    cam.tilt = lerp(t0, to.tilt, e) * (1 - .75 * arc * clamp(bump / 1.5, 0, 1));
+    o.target.copy(an).applyQuaternion(q).multiplyScalar(lerp(ra, rb, e));
+    o.dist = Math.exp(lerp(Math.log(d0), Math.log(d1), e) + Math.max(0, bump) * arc);
+    o.heading = lerpAngle(h0, b.heading, e);
+    o.tilt = lerp(t0, b.tilt, e) * (1 - .75 * arc * clamp(bump / 1.5, 0, 1));
+    o.sx = lerp(s0, b.sx || 0, e);
+    return arc;
+  } };
+}
+function flyTo(to, dur) {
+  const h = hop(tcam, to), veil = state.clouds * clamp((h.span - 2.2) / 2.4, 0, .95);
+  dur = dur ?? clamp(1.4 + .55 * Math.log(1 + h.gkm / 20) + .25 * h.span, 1.6, 6.5);
+  if (reduceMotion) dur = .01;
+  return anim(dur, t => {
+    const arc = h.at(tcam, ease(t));
     state.veil = veil * Math.pow(arc, 1.6);
     state.veilOff.x += .004 * arc; state.veilOff.y -= .002 * arc;
   }).then(r => { state.veil = 0; return r; });
+}
+
+/* ---------- explore: look around freely at any point of the journey ---------- */
+// A real drag, pinch, twist or wheel (not a tap) starts exploring: the journey's clock holds (countdowns,
+// vehicles, tour orbits), the world keeps moving, and a "Back to tour" pill appears above the card.
+const explore = { on: false, origin: new V3(), d0: 1, blend: null };
+const exploreEl = document.getElementById('explore');
+const jspeed = () => explore.on ? 0 : clock.speed;        // how fast the journey runs: held while exploring
+function beginExplore(touch) {
+  explore.blend = null;
+  if (explore.on) return;
+  explore.on = true; explore.origin.copy(cam.target); explore.d0 = cam.dist;
+  document.getElementById('exHint').textContent = touch ? 'Pinch · twist to turn' : 'Scroll to zoom · right-drag to turn';
+  exploreEl.classList.add('show'); syncPause();
+}
+// Hand the camera back: the journey resumes at once and cam blends from the viewer's view onto the live tcam.
+function backToTour() {
+  if (!explore.on) return;
+  explore.on = false; exploreEl.classList.remove('show'); syncPause();
+  const h = hop(cam, tcam);
+  explore.blend = { from: copyRig(rig(), cam), t: 0, dur: reduceMotion ? .01 : clamp(1 + .3 * Math.log(1 + h.gkm / 2) + .2 * h.span, 1.1, 3) };
+}
+// Leave exploring at once; with keepView the journey picks up from what the viewer is looking at (a new step).
+function endExplore(keepView) {
+  if (keepView && (explore.on || explore.blend)) copyRig(tcam, cam);
+  const was = explore.on; explore.on = false; explore.blend = null; exploreEl.classList.remove('show');
+  if (was) syncPause();
+}
+function updateExplore(dt) {                // once a frame, before the camera is placed
+  const B = explore.blend;
+  if (B) { B.t = Math.min(1, B.t + dt / B.dur); hop(B.from, tcam).at(cam, ease(B.t)); if (B.t >= 1) explore.blend = null; }
+  if (!explore.on && !explore.blend) copyRig(cam, tcam);
+}
+const veilWeight = () => explore.on ? 0 : explore.blend ? ease(explore.blend.t) : 1;   // no flight clouds while exploring
+
+/* ---------- framing: fit a set of points into the open part of the screen ---------- */
+// Works in CSS pixels on a scratch copy of the real camera (fov, aspect and the view offset that centres the open area).
+const fitCamera = new THREE.PerspectiveCamera(), _fp = new V3(), _fq = new V3(), _fa = new V3(), _fb = new V3(), _fz = new V3();
+const _frc = new THREE.Raycaster(), _fn = new THREE.Vector2(), _fs = new THREE.Sphere(), _fpl = new THREE.Plane(), _fqq = new THREE.Quaternion();
+function openArea(storyRoom) {    // below the header, above the card, in from the sides (CSS px)
+  const w = innerWidth, ph = phone(), cardTop = document.getElementById('dock').firstElementChild.getBoundingClientRect().top;
+  // with a story due, its card: full width at the top on phones, a column at the right on desktop. Labels on a phone
+  // also stay below the column of layer chips (ly0), which keeps every constraint a plain box, so shots change smoothly.
+  const y0 = ph ? (storyRoom ? 282 : 90) : 76;
+  return { x0: ph ? 26 : 56, x1: w - (ph ? 26 : storyRoom ? 400 : 56), y0, ly0: ph ? Math.max(y0, 160) : y0, y1: cardTop - 28 };
+}
+const item = (v, l = 0, r = 0, u = 0, d = 0, lab = false) => ({ v, l, r, u, d, lab });   // a world point and the px it needs around it
+// The rig at this tilt and heading that shows every item: the target slides until the items sit centred in the open
+// area, and the distance is the smallest that keeps them all inside it and on the visible side of the globe.
+function fitRig(items, tilt, heading, near, storyRoom = false, dHint = 0) {
+  fitCamera.copy(camera, false);
+  const A = openArea(storyRoom), w = innerWidth, h = innerHeight, r0 = near.length();
+  const r = rig({ target: near.clone(), tilt, heading, sx: (A.x0 + A.x1 - w) / 2 });   // the target sits mid open area
+  const px = q => { _fp.copy(q.v).project(fitCamera); return _fp.z < 1 && [(_fp.x + 1) / 2 * w, (1 - _fp.y) / 2 * h]; };
+  const ok = d => {
+    r.dist = d; poseCamera(fitCamera, r);
+    for (const q of items) {
+      if (_fq.copy(q.v).normalize().dot(_fp.subVectors(fitCamera.position, q.v).normalize()) < .1) return false;   // over the horizon
+      const s = px(q); if (!s) return false;
+      const X = s[0], Y = s[1];
+      if (X - q.l < A.x0 || X + q.r > A.x1 || Y - q.u < (q.lab ? A.ly0 : A.y0) || Y + q.d > A.y1) return false;
+    }
+    return true;
+  };
+  const search = () => {      // smallest distance that fits, if any does
+    let lo = 0, hi = Math.log(80000);
+    for (let k = 0; k < 22; k++) { const m = (lo + hi) / 2; if (ok(Math.exp(m))) hi = m; else lo = m; }
+    return ok(Math.exp(hi)) ? Math.exp(hi) : 0;
+  };
+  // where screen point X, Y meets the globe (or the level plane through the target, when it misses)
+  const hit = (X, Y, out) => {
+    _fn.set(X / w * 2 - 1, 1 - Y / h * 2); _frc.setFromCamera(_fn, fitCamera);
+    return _frc.ray.intersectSphere(_fs.set(_fz, r0), out) || _frc.ray.intersectPlane(_fpl.setFromNormalAndCoplanarPoint(_fq.copy(r.target).normalize(), r.target), out);
+  };
+  let d = dHint || Math.max(...items.map(q => q.v.distanceTo(near))) * 2.5;
+  for (let it = 0; it < 4; it++) {
+    ok(d);                     // at a sensible distance, find the centre of the items' box ...
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (const q of items) {
+      const s = px(q); if (!s) continue;
+      const X = clamp(s[0], -w, 2 * w), Y = clamp(s[1], -h, 2 * h);
+      x0 = Math.min(x0, X - q.l); x1 = Math.max(x1, X + q.r); y0 = Math.min(y0, Y - q.u); y1 = Math.max(y1, Y + q.d);
+    }
+    // ... and turn the globe under the rig so that centre moves to the open area's centre; then find the distance
+    const pb = hit((x0 + x1) / 2, (y0 + y1) / 2, _fb), pa = pb && hit((A.x0 + A.x1) / 2, (A.y0 + A.y1) / 2, _fa);
+    if (pa) r.target.applyQuaternion(_fqq.setFromUnitVectors(pa.normalize(), pb.normalize())).setLength(r0);
+    d = search() || d * 1.5;
+  }
+  r.dist = d; return r;
+}
+function easeInv(f) { let lo = 0, hi = 1; for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (ease(m) < f) lo = m; else hi = m; } return (lo + hi) / 2; }
+function pathPts(p, s0, s1, n = 28) { const o = []; for (let i = 0; i <= n; i++) o.push(p.at(lerp(s0, s1, i / n), new V3())); return o; }
+const bearing = (a, b) => headingOf(a.clone().add(b).normalize(), b.clone().sub(a).normalize());
+const unwrap = (h, ref) => ref + (((h - ref) % 360 + 540) % 360) - 180;
+// Camera shots for a flight (or two flown side by side): at each moment the route still to fly plus half of what has
+// been flown, and the airport labels at its ends, framed in the open area. Take-off, plane and landing stay in view
+// while it eases in toward the landing. On a portrait screen the map turns part or all of the way "heading up" (the
+// route runs up the screen, or down with flip) when that frames it clearly bigger. 17 shots, interpolated.
+// Room for the place labels at the ends of the paths (a label reads to the left or right of its dot).
+function endLabels(paths, keys, nearKm) {
+  const out = [];
+  for (const p of paths) [p.p[0], p.p[p.p.length - 1]].forEach((end, i) => {
+    for (const k of keys) {
+      const L = PL[k], v = ground(L.lat, L.lon), wpx = (L.el.offsetWidth || 110) + 6;
+      if (v.distanceTo(end) < nearKm) out.push({ ...(L.flip ? item(v, wpx, 10, 12, 12, true) : item(v, 10, wpx, 12, 12, true)), path: i ? null : p });
+    }
+  });
+  return out;
+}
+function flightShots(paths, o = {}) {
+  const S = { key: '', list: [] }, labels = endLabels(paths, ['ict', 'ord', 'den'], 60);
+  // route points (both ends kept clear of the phone's chips, like labels), plus the airport labels; the departure label
+  // rides along with the start of the window and shrinks away, so the camera eases in smoothly
+  const win = e => [...paths.flatMap(p => pathPts(p, p.len * e * .5, p.len, 24).map((v, i) => item(v, 12, 12, 12, 12, !i || i === 24))),
+    ...labels.map(q => { if (!q.path) return q; const k = 1 - smooth(0, .45, e); return item(q.path.at(q.path.len * e * .5, new V3()), q.l * k, q.r * k, 12, 12, true); })];
+  const head = e => { const p = paths[0], a = p.at(p.len * e * .5, new V3()), b = p.p[p.p.length - 1]; return o.flip ? bearing(b, a) : bearing(a, b); };
+  const build = () => {
+    S.key = viewKey; S.list = [];
+    const near = pathPts(paths[0], 0, paths[0].len, 8).reduce((a, v) => a.add(v), new V3()).setLength(R), hs = [];
+    for (let i = 0; i <= 16; i++) hs.push(i ? unwrap(head(i / 16), hs[i - 1]) : head(0));
+    let k = 0;
+    if (innerWidth < innerHeight * .9) {
+      let best = Infinity; S.cands = [];
+      for (const kk of [0, .5, 1]) {
+        const sc = fitRig(win(0), 12 + 10 * kk, hs[0] * kk, near).dist * (1 + .5 * Math.abs(hs[0] * kk) / 90);   // turning has a cost
+        S.cands.push([hs[0] * kk | 0, sc | 0]); if (sc < best) { best = sc; k = kk; }
+      }
+    }
+    for (let i = 0; i <= 16; i++) { const pv = S.list[i - 1]; S.list.push(fitRig(win(i / 16), 12 + 10 * k, hs[i] * k, pv ? pv.target : near, o.storyAt != null && i / 16 > o.storyAt - .12, pv && pv.dist)); }
+  };
+  S.put = (e, out) => {                      // Catmull-Rom through the shots: smooth speed through the knots
+    if (S.key !== viewKey) build();
+    const L = S.list, x = clamp(e, 0, 1) * (L.length - 1), i = Math.min(L.length - 2, Math.floor(x)), f = x - i;
+    const q = j => L[clamp(j, 0, L.length - 1)], cr = (a, b, c, d) => .5 * (2 * b + (c - a) * f + (2 * a - 5 * b + 4 * c - d) * f * f + (3 * b - a - 3 * c + d) * f * f * f);
+    const [a, b, c, d] = [q(i - 1), q(i), q(i + 1), q(i + 2)], g = key => cr(a[key], b[key], c[key], d[key]);
+    out.target.set(cr(a.target.x, b.target.x, c.target.x, d.target.x), cr(a.target.y, b.target.y, c.target.y, d.target.y), cr(a.target.z, b.target.z, c.target.z, d.target.z)).setLength(R);
+    out.dist = Math.exp(cr(Math.log(a.dist), Math.log(b.dist), Math.log(c.dist), Math.log(d.dist)));
+    out.heading = g('heading'); out.tilt = g('tilt'); out.sx = g('sx');
+    return out;
+  };
+  S.at = e => S.put(e, rig());
+  build();
+  return S;
+}
+// drawPlane, but drawn climbing and descending no steeper than about 14° (the arc is near vertical at its very ends,
+// which would point the nose straight at the camera on take-off)
+function flyPlane(obj, path, d) {
+  const pos = drawPlane(obj, path, d), up = _fq.copy(pos).normalize(), vz = _tan.dot(up), lim = .24;
+  if (Math.abs(vz) > lim) { _tan.addScaledVector(up, -vz).setLength(Math.sqrt(1 - lim * lim)).addScaledVector(up, Math.sign(vz) * lim); placeObj(obj, pos, _tan, obj.scale.x, true); }
+  return pos;
+}
+// ?debug only: freeze moment e (0..1) of a flight over the given routes, framed as flight() and homeward() frame it
+const _dbgShots = {};
+function debugFlight(keys, e, o = {}) {
+  token.dead = true; token = { dead: false }; endExplore(); state.orbit = 0; state.veil = 0; hideVehicles();
+  const paths = keys.map(k => ROUTES[k].path), id = keys.join() + JSON.stringify(o) + viewKey;
+  const S = _dbgShots[id] || (_dbgShots[id] = flightShots(paths, o));
+  S.put(e, tcam); copyRig(cam, tcam); applyCam();          // planes are sized from the camera
+  paths.forEach((p, i) => { ROUTES[keys[i]].set('uReveal', e * p.len); flyPlane(i ? plane2 : plane, p, e * p.len); });
+  return JSON.stringify({ d: tcam.dist | 0, h: tcam.heading | 0, t: tcam.tilt | 0, cands: S.cands, knots: S.list.map(r => r.dist | 0) });
 }
 
 /* ---------- places & labels ---------- */
@@ -1303,9 +1499,9 @@ function storyHold(p, side, onTick) {
       if (tok.dead) return res(false);
       const dt = clock.t - last; last = clock.t;
       if (!story.wait) el += dt;
-      poiEl.classList.toggle('waiting', story.wait);
+      poiEl.classList.toggle('waiting', story.wait || explore.on);
       bar.style.transform = `scaleX(${story.wait ? 1 : (1 - clamp(el / T, 0, 1)).toFixed(4)})`;
-      onTick && onTick();
+      onTick && onTick(dt);                // dt is journey time: 0 while paused or exploring
       if (story.skip || el >= T || !state.stories) { showPoi(null); return res(true); }
       requestAnimationFrame(tick);
     })();
@@ -1378,7 +1574,7 @@ function setCity(c) {
   for (const p of Object.values(PL)) p.v = null;              // heights change: drop cached positions
   for (const p of Object.values(POI)) p.v = null;
   for (const q of pins) q.p.v = null;
-  cam.target.copy(reground(cam.target));
+  cam.target.copy(reground(cam.target)); tcam.target.copy(reground(tcam.target));
   hideVehicles();
   updateCredit();
   hook('onCity', !!c);
@@ -1515,28 +1711,25 @@ function buildJourney(geo, family = []) {
   ];
 
   async function flight(p, key, end, pois = []) {
-    const a = p.p[0].clone().normalize(), b = p.p[p.p.length - 1].clone().normalize();
-    const mid = a.clone().add(b).normalize().multiplyScalar(R);
-    const fd = clamp(p.groundKm * 1.25, 1200, 11000) * fit;
-    if (!await flyTo({ target: mid, dist: fd, tilt: 12, heading: 0 })) return;
+    const stops = state.stories ? placePois(p, pois) : [];
+    const shots = flightShots([p], { storyAt: stops.length ? stops[0].s / p.len : null });   // the camera makes room for the story card
+    if (!await flyTo(shots.at(0))) return;
     const T = reduceMotion ? .01 : clamp(3 + p.groundKm / 1400, 4, 8.5);
-    const m0 = mid.clone(), bR = b.clone().multiplyScalar(R);
     const at = d => {
       const e = d / p.len;
-      ROUTES[key].set('uReveal', d); drawPlane(plane, p, d);
-      cam.target.copy(m0).lerp(bR, e * .25).normalize().multiplyScalar(R);
-      cam.dist = fd * (1 - .12 * e); state.progress = e * .8;
+      ROUTES[key].set('uReveal', d); flyPlane(plane, p, d);
+      shots.put(e, tcam); state.progress = e * .8;
     };
     let from = 0;
-    for (const st of [...(state.stories ? placePois(p, pois) : []), null]) {
-      const to = st ? st.s : p.len, f0 = from / p.len, f1 = to / p.len;
-      // one smooth curve over the whole flight, stopping where a story is told
-      if (!await anim(Math.max(.01, T * (f1 - f0)), t => at(p.len * ease(lerp(f0, f1, t))))) return;
+    for (const st of [...stops, null]) {
+      const to = st ? st.s : p.len, u0 = easeInv(from / p.len), u1 = easeInv(to / p.len);
+      // one smooth curve over the whole flight, stopping exactly where a story is told
+      if (!await anim(Math.max(.01, T * (u1 - u0)), t => at(p.len * ease(lerp(u0, u1, t))))) return;
       if (st && !await storyHold(st.p, st.side, () => at(to))) return;
       from = to;
     }
     plane.visible = false;
-    await flyTo(end); state.progress = 1;
+    await flyTo({ ...end, dist: Math.min(end.dist, tcam.dist) }); state.progress = 1;   // settle on the airport, no pulling back
   }
   // One part of a ground leg, from s0 to s1 km along the path. A part that starts at a major
   // waypoint (a sub-step such as 4.1) first parks there and looks around while the story is read.
@@ -1553,7 +1746,7 @@ function buildJourney(geo, family = []) {
       draw(path, s0);
       if (!await flyTo(view(f.lat, f.lon, f.d || 2.6, 60, h0 + turn))) return false;
       if (!await enterCity(f)) return false;
-      if (!await storyHold(f, o.focus.side, () => { cam.heading += .05 * clock.speed; })) return false;
+      if (!await storyHold(f, o.focus.side, dt => { tcam.heading += 3 * dt; })) return false;
       state.progress = .3;
       if (!await exitCity()) return false;
       draw(path, s0);
@@ -1573,8 +1766,8 @@ function buildJourney(geo, family = []) {
         camTarget.copy(pos).lerp(st.p.v, .35 * k);
       } else camTarget.copy(pos);
       hd = lerpAngle(hd, want, ease60(.05)); look = lerp(look, k, ease60(.05));
-      cam.target.copy(camTarget); cam.heading = hd;
-      cam.dist = (6.5 + 9 * Math.sin(Math.PI * f) * (1 - look)) * fitClose; cam.tilt = 64 - 6 * Math.sin(Math.PI * f);
+      tcam.target.copy(camTarget); tcam.heading = hd;
+      tcam.dist = (6.5 + 9 * Math.sin(Math.PI * f) * (1 - look)) * fitClose; tcam.tilt = 64 - 6 * Math.sin(Math.PI * f);
       state.progress = base + f * ((o.roundTrip && last) ? .45 : .85) * (1 - base);
     };
     let from = s0, prev = null;
@@ -1592,9 +1785,10 @@ function buildJourney(geo, family = []) {
     if (!last) return true;               // the next sub-step picks up from here
     if (o.roundTrip) {
       if (!await tour(o.tour, o.stop, 0, true)) return false;
-      const back = o.roundTrip, mid = back.p[0].clone().add(back.p[back.p.length - 1]).multiplyScalar(.5);
+      const back = o.roundTrip, mid = reground(back.p[0].clone().add(back.p[back.p.length - 1]));
       setPins([]);
-      if (!await flyTo({ target: mid, dist: (back.len * 1.15 + 20) * fit, tilt: 30, heading: 0 }, 2)) return false;
+      const home = [...pathPts(back, 0, back.len).map(v => item(v, 16, 16, 16, 16)), ...endLabels([back], ['munich', 'nue', 'neu'], 15)];
+      if (!await flyTo(fitRig(home, 30, 0, mid), 2)) return false;   // the whole way home in view, labels and all
       if (!await anim(reduceMotion ? .01 : 4, t => { draw(back, ease(t) * back.len); state.progress = .6 + t * .4; })) return false;
       hideVehicles();
       await flyTo(munichHome(), 2);
@@ -1625,22 +1819,27 @@ function buildJourney(geo, family = []) {
   }
   async function homeward() {
     const a = P.mucDen, b = P.denIct, c = P.mucOrd, d2 = P.ordIct;
-    if (!await flyTo({ target: llv(52, -40), dist: 11500 * fit, tilt: 8, heading: 0 })) return;
+    // both Atlantic crossings framed together, then both hops home (turned the same way, so the map barely rotates)
+    const s1 = flightShots([a, c]), s2 = flightShots([b, d2], { flip: true });
+    if (!await flyTo(s1.at(0))) return;
     let ok = await anim(reduceMotion ? .01 : 8, t => {
       const e = ease(t);
       ROUTES.mucDen.set('uReveal', e * a.len); ROUTES.mucOrd.set('uReveal', e * c.len);
-      drawPlane(plane, a, e * a.len); drawPlane(plane2, c, e * c.len); state.progress = t * .6;
+      flyPlane(plane, a, e * a.len); flyPlane(plane2, c, e * c.len); state.progress = t * .6;
+      s1.put(e, tcam);
     });
     if (!ok) return;
-    if (!await flyTo(far(view(39.2, -96, 2600, 15, 0)), 2.5)) return;
+    if (!await flyTo(s2.at(0), 2.5)) return;
     ok = await anim(reduceMotion ? .01 : 4, t => {
       const e = ease(t);
       ROUTES.denIct.set('uReveal', e * b.len); ROUTES.ordIct.set('uReveal', e * d2.len);
-      drawPlane(plane, b, e * b.len); drawPlane(plane2, d2, e * d2.len); state.progress = .6 + t * .4;
+      flyPlane(plane, b, e * b.len); flyPlane(plane2, d2, e * d2.len); state.progress = .6 + t * .4;
+      s2.put(e, tcam);
     });
     if (!ok) return;
     hideVehicles();
-    await flyTo(far(view(PL.ict.lat, PL.ict.lon, 1400, 20, 0)), 2);
+    const home = far(view(PL.ict.lat, PL.ict.lon, 1400, 20, 0));
+    await flyTo({ ...home, dist: Math.min(home.dist, tcam.dist) }, 2);
   }
 }
 // Visit each stop in turn with its story, then settle back on the view of the whole place.
@@ -1650,9 +1849,9 @@ async function tour(stops, base, rate = 1, partOfLeg = false) {
   if (!await enterCity(base)) return false;
   for (let i = 0; i < stops.length; i++) {
     const p = stops[i];
-    if (!await flyTo(view(p.lat, p.lon, p.d || 1.1, 60, (cam.heading + 35) % 360), 2)) return false;
+    if (!await flyTo(view(p.lat, p.lon, p.d || 1.1, 60, (tcam.heading + 35) % 360), 2)) return false;
     state.progress = (i + 1) / stops.length * (partOfLeg ? .15 : 1) + (partOfLeg ? .45 : 0);
-    if (!await storyHold(p, `Stop ${i + 1} of ${stops.length}`, () => { cam.heading += .06 * clock.speed; })) return false;
+    if (!await storyHold(p, `Stop ${i + 1} of ${stops.length}`, dt => { tcam.heading += 3.6 * dt; })) return false;
   }
   showPoi(null);
   if (!await flyTo(rg(base), 2)) return false;
@@ -1685,13 +1884,17 @@ function setRouteStyles(i) {
     else { r.set('uAlpha', i === 0 || i === STEPS.length - 1 ? .75 : .2); r.set('uReveal', r.path.len); }
   }
 }
-function setPaused(p) {
-  clock.speed = p ? 0 : 1;
+function setPaused(p) { clock.speed = p ? 0 : 1; syncPause(); }
+function syncPause() {                    // exploring holds the journey too, so the button offers to play
+  const p = clock.speed === 0 || explore.on;
   $('pause').innerHTML = p ? '&#9654;' : '&#10074;&#10074;';
-  $('pause').setAttribute('aria-label', p ? 'Play' : 'Pause');
+  $('pause').setAttribute('aria-label', explore.on ? 'Back to tour and play' : p ? 'Play' : 'Pause');
 }
+function togglePause() { if (explore.on) { setPaused(false); backToTour(); } else setPaused(clock.speed !== 0); }
+function continueStory() { story.skip = true; backToTour(); }
 async function go(i) {
   token.dead = true; token = { dead: false };
+  endExplore(true);                     // the next step flies on from what the viewer is looking at
   setPaused(false); setCity(null);
   state.step = (i + STEPS.length) % STEPS.length; state.progress = 0; state.orbit = 0; state.veil = 0;
   const s = STEPS[state.step];
@@ -1720,17 +1923,19 @@ addEventListener('hashchange', () => {
 });
 $('next').onclick = () => go(state.step + 1);
 $('prev').onclick = () => go(state.step - 1);
-$('pause').onclick = () => setPaused(clock.speed !== 0);
-$('poiNext').onclick = () => { story.skip = true; };
+$('pause').onclick = togglePause;
+$('poiNext').onclick = continueStory;
+$('backTour').onclick = backToTour;
 function readWait() { try { return localStorage.getItem('storyWait') === '1'; } catch (e) { return false; } }
 function setWait(w) { story.wait = w; $('poiHold').setAttribute('aria-pressed', w ? 'true' : 'false'); try { localStorage.setItem('storyWait', w ? '1' : '0'); } catch (e) {} }
 $('poiHold').onclick = () => setWait(!story.wait);
 setWait(readWait());
 addEventListener('keydown', e => {
   if (e.target.closest && e.target.closest('button') && (e.key === ' ' || e.key === 'Enter')) return;
-  if ((e.key === 'ArrowRight' || e.key === 'Enter') && poiShown) story.skip = true;
+  if ((e.key === 'ArrowRight' || e.key === 'Enter') && poiShown) continueStory();
   else if (e.key === 'ArrowRight') go(state.step + 1); else if (e.key === 'ArrowLeft') go(state.step - 1);
-  else if (e.key === ' ') { e.preventDefault(); setPaused(clock.speed !== 0); }
+  else if (e.key === ' ') { e.preventDefault(); togglePause(); }
+  else if (e.key === 'Escape') backToTour();
 });
 function toggle(btn, key, after) {
   btn.onclick = () => { state[key] = state[key] ? 0 : 1; btn.setAttribute('aria-pressed', state[key] ? 'true' : 'false'); after && after(); };
@@ -1756,25 +1961,76 @@ $('gform').addEventListener('submit', e => { e.preventDefault(); $('gsave').clic
 $('gkey').addEventListener('keydown', e => { if (e.key === 'Escape') $('gcancel').click(); });
 toggle($('tWinter'), 'winter'); toggle($('tClouds'), 'clouds'); toggle($('tStories'), 'stories', () => { if (!state.stories) showPoi(null); });
 
-/* ---------- pointer: drag to look around, wheel / pinch to zoom ---------- */
-const pts = new Map(); let pinch0 = 0;
+/* ---------- pointer: explore by hand ---------- */
+// One finger / left mouse drags the ground along (high up, cam.dist > 600, it spins the globe). Pinch or wheel zooms
+// toward the fingers or cursor, two-finger twist turns, two-finger up / down tilts; right, middle, ctrl or shift drag
+// turns and tilts with a mouse. Anything past a few pixels starts exploring; a plain tap does nothing.
+const pts = new Map(); let g2 = null, dragging = false;
 const cv = renderer.domElement;
-cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); state.orbit = 0; });
+const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(), _pl = new THREE.Plane(), _ha = new V3(), _hb = new V3(), _hm = new V3(), _hn = new V3();
+function groundHit(x, y, out) {   // where screen point x, y (CSS px) meets the level plane through the target
+  _ndc.set(x / innerWidth * 2 - 1, 1 - y / innerHeight * 2); _ray.setFromCamera(_ndc, camera);
+  _pl.setFromNormalAndCoplanarPoint(_hn.copy(cam.target).normalize(), cam.target);
+  const p = _ray.ray.intersectPlane(_pl, out);
+  return p && p.distanceTo(cam.target) < cam.dist * 8 ? p : null;
+}
+function moveTarget(mv) {         // slide the target over the ground, staying within ~25 km of where exploring began
+  const o = explore.origin, off = _hm.copy(cam.target).add(mv).sub(o), up = _hn.copy(o).normalize();
+  off.addScaledVector(up, -off.dot(up)); off.clampLength(0, Math.max(25, explore.d0 * .6));
+  cam.target.copy(reground(off.add(o)));
+}
+function panBy(x0, y0, x1, y1) {  // keep the ground point that was under the finger under it
+  const a = groundHit(x0, y0, _ha), b = a && groundHit(x1, y1, _hb), mv = new V3();
+  if (b) mv.subVectors(a, b);
+  else {                          // pointing at the sky: slide by a screen-sized step instead
+    const f = enu(cam.target), h = cam.heading * D2R, k = 2 * cam.dist * Math.tan(camera.fov * D2R / 2) / innerHeight;
+    mv.addScaledVector(f.east, Math.cos(h)).addScaledVector(f.north, -Math.sin(h)).multiplyScalar(-(x1 - x0) * k)
+      .addScaledVector(f.north.multiplyScalar(Math.cos(h)).addScaledVector(f.east, Math.sin(h)), (y1 - y0) * k / Math.max(.35, Math.cos(cam.tilt * D2R)));
+  }
+  moveTarget(mv.clampLength(0, cam.dist * .6));
+}
+function zoomAt(k, x, y) {        // scale the distance by k, keeping the ground under x, y where it is on screen
+  const lo = Math.min(.3, explore.d0), hi = explore.d0 > 60 ? Math.max(30000, explore.d0) : 60, d1 = clamp(cam.dist * k, lo, hi);
+  if (cam.dist <= 600 && groundHit(x, y, _ha)) moveTarget(_ha.sub(cam.target).multiplyScalar(1 - d1 / cam.dist));
+  cam.dist = d1;
+}
+function turn(dh, dt) { cam.heading += dh; cam.tilt = clamp(cam.tilt + dt, 0, 80); }
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId); g2 = null;
+  pts.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, touch: e.pointerType !== 'mouse',
+    rot: e.button > 0 || e.ctrlKey || e.shiftKey || e.altKey || e.metaKey });
+});
 cv.addEventListener('pointermove', e => {
   const p = pts.get(e.pointerId); if (!p) return;
-  const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
-  if (pts.size === 2) {
-    const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
-    if (pinch0) cam.dist = clamp(cam.dist * pinch0 / d, .6, 30000); pinch0 = d; return;
+  let px = p.x, py = p.y; p.x = e.clientX; p.y = e.clientY;
+  if (!dragging) {
+    let moved = 0; for (const q of pts.values()) moved = Math.max(moved, Math.hypot(q.x - q.x0, q.y - q.y0));
+    if (moved < 6) return;        // still a tap
+    dragging = true; beginExplore(p.touch); px = p.x0; py = p.y0;
   }
-  if (cam.dist > 600) {
+  if (pts.size >= 2) {
+    const [a, b] = [...pts.values()], d = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), an = Math.atan2(b.y - a.y, b.x - a.x), my = (a.y + b.y) / 2;
+    if (g2) {
+      zoomAt(g2.d / d, (a.x + b.x) / 2, my);
+      const da = Math.atan2(Math.sin(an - g2.an), Math.cos(an - g2.an));
+      turn(-da / D2R, -(my - g2.my) * .3);
+    }
+    g2 = { d, an, my }; applyCam(); return;
+  }
+  if (cam.dist > 600) {           // high up: spin the globe
     const f = enu(cam.target), k = cam.dist / R * .0022;
-    cam.target.applyAxisAngle(f.north, -dx * k).applyAxisAngle(f.east, dy * k);
-  } else { cam.heading -= dx * .25; cam.tilt = clamp(cam.tilt - dy * .2, 0, 80); }
+    cam.target.applyAxisAngle(f.north, -(p.x - px) * k).applyAxisAngle(f.east, (p.y - py) * k);
+  } else if (p.rot) turn(-(p.x - px) * .25, -(p.y - py) * .2);
+  else panBy(px, py, p.x, p.y);
+  applyCam();                     // so the next move measures against where the camera now is
 });
-const up = e => { pts.delete(e.pointerId); pinch0 = 0; };
+const up = e => { pts.delete(e.pointerId); g2 = null; if (!pts.size) dragging = false; };
 cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
-cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist = clamp(cam.dist * Math.exp(e.deltaY * .0012), .6, 30000); }, { passive: false });
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('wheel', e => {
+  e.preventDefault(); beginExplore(false);
+  zoomAt(Math.exp(clamp(e.deltaY * (e.deltaMode ? 33 : 1), -150, 150) * .0012), e.clientX, e.clientY); applyCam();
+}, { passive: false });
 
 /* ---------- frame loop ---------- */
 function resize() {
@@ -1805,9 +2061,10 @@ const ease60 = r => 1 - Math.pow(1 - r, FDT * 60);      // frame-rate independen
 function frame(now) {
   const dt = Math.min(DEBUG ? 1 : .1, (now - last) / 1000); last = now; FDT = Math.min(dt, .05);
   adaptQuality(now, dt);
-  clock.t += dt * clock.speed;
+  clock.t += dt * jspeed();                  // the journey holds while exploring; the world (uTime) keeps going
   uni.uTime.value += dt * clock.speed;
-  if (state.orbit) cam.heading += state.orbit * dt * 2.2 * clock.speed;
+  if (state.orbit) tcam.heading += state.orbit * dt * 2.2 * jspeed();
+  updateExplore(dt);
   updateViewOffset();
   const alt = applyCam(); uni.uAlt.value = alt;
   const right = new V3().setFromMatrixColumn(camera.matrixWorld, 0), cup = new V3().setFromMatrixColumn(camera.matrixWorld, 1);
@@ -1828,14 +2085,15 @@ function frame(now) {
   stars.material.opacity = smooth(300, 2500, alt);
   bg.copy(bgSky).lerp(bgSpace, smooth(25, 900, alt)); renderer.setClearColor(bg);
   updateSprites(dt, alt);
-  veilMat.uniforms.uCover.value = state.veil; veilMat.uniforms.uOff.value.copy(state.veilOff);
+  const cover = state.veil * veilWeight();
+  veilMat.uniforms.uCover.value = cover; veilMat.uniforms.uOff.value.copy(state.veilOff);
   state.snow = lerp(state.snow, state.snowTarget * winterV * (cam.dist < 40 ? 1 : 0), .04);
   drawSnow(dt * clock.speed, state.snow);
   hook('update', dt * clock.speed, alt);
   updateLabels(); updatePins();
   $('prog').style.width = (state.progress * 100).toFixed(1) + '%';
   renderer.clear(); renderer.render(scene, camera);
-  if (state.veil > .002) renderer.render(veilScene, veilCam);
+  if (cover > .002) renderer.render(veilScene, veilCam);
   requestAnimationFrame(frame);
 }
 
@@ -1902,7 +2160,7 @@ function loadHeight(url) {
     buildTerrain(); buildSprites(); buildLandmarks(); buildJourney(geo, (family.places || []).filter(f => isFinite(f.lat) && isFinite(f.lon))); buildDots();
     requestAnimationFrame(frame);
     $('loading').classList.add('gone');
-    if (DEBUG) window.__dbg = { set: (la, lo, d, t, h) => { token.dead = true; token = { dead: false }; state.orbit = 0; state.veil = 0; Object.assign(cam, view(la, lo, d, t, h)); }, cam, view, go, state, usePack, clock, setPaused, POI, scene, features, ctx };
+    if (DEBUG) window.__dbg = { set: (la, lo, d, t, h) => { token.dead = true; token = { dead: false }; state.orbit = 0; state.veil = 0; endExplore(); copyRig(tcam, view(la, lo, d, t, h)); }, cam, tcam, explore, backToTour, fitRig, flight: debugFlight, cdbg: { ROUTES, item, pathPts, openArea, fitCamera, poseCamera }, view, go, state, usePack, clock, setPaused, POI, scene, features, ctx };
     const h = location.hash.slice(1), start = Math.max(0, STEPS.findIndex(s => s.id === h || s.day === h));
     go(start);
   } catch (err) {

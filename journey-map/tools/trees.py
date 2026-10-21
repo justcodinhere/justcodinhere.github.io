@@ -15,7 +15,7 @@ ROUTE={'munich':'apt_city','inn':'muc_ibk','nue':'muc_nue','neu':'muc_neusch'}
 HOT={'munich':[(48.137,11.575)],'inn':[(47.268,11.393),(47.5836,12.1706),(47.4383,11.8933)],'nue':[(49.454,11.077)],'neu':[(47.5576,10.7498),(47.6811,10.9002)]}
 for name in ['munich','inn','nue','neu']:
   idx=np.asarray(Image.open(f'packs/{name}-index.png')); atlas=np.asarray(Image.open(f'packs/{name}.jpg').convert('RGB')).astype(np.float32)
-  ys,xs=np.where(idx[...,2]>0)
+  ys,xs=np.where(idx[...,2]>200)                     # 10 m cells only (B=255); B=128 marks 20 m cells in the mid atlas
   ox=W+xs.min()*CW; oy=S_+ys.min()*CH
   line=LineString([mm(*p) for p in geo['routes'][ROUTE[name]]]); hotp=[Point(mm(lo,la)) for la,lo in HOT[name]]
   pts=[]
