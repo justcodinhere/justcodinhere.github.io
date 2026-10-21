@@ -1,0 +1,4 @@
+{
+  "about": "Family places shown on the journey map. Each place needs a name, lat and lon; people and note are shown in its story card. Places within about 8 km of a route become stops along that leg; places up to 60 km away become a sub-step that points them out. Set major to false to show a nearby place as a short story instead of its own stop.",
+  "places": []
+}

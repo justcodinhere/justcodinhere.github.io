@@ -61,6 +61,8 @@
   .pin span { display: none; }
   .pin.on i { background: var(--gold); box-shadow: 0 0 0 0 rgba(221,187,108,.7); animation: ping 1.6s infinite; }
   .pin.on span { display: inline; }
+  .pin.fam i { border-color: var(--red); }
+  .pin.fam.on i { background: var(--red); }
   @keyframes ping { to { box-shadow: 0 0 0 14px rgba(221,187,108,0); } }
 
   .ui { position: fixed; z-index: 5; }
@@ -135,9 +137,11 @@
   .controls { display: flex; align-items: center; gap: 8px; }
   .dots { display: flex; gap: 5px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
   .dot {
-    width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--glass-line); background: transparent;
-    color: var(--muted); font: 500 10.5px/1 var(--font-mono); cursor: pointer; padding: 0; flex: 0 0 auto;
+    min-width: 22px; padding-inline: 3px; width: auto; height: 22px; border-radius: 6px; border: 1px solid var(--glass-line); background: transparent;
+    color: var(--muted); font: 500 10.5px/1 var(--font-mono); cursor: pointer; padding-block: 0; flex: 0 0 auto;
   }
+  .dot.sub { width: auto; min-width: 26px; padding: 0 4px; font-size: 9.5px; height: 18px; align-self: center; border-style: dashed; }
+  .dot.fam { border-color: var(--red); color: var(--red); }
   .dot.done { background: rgba(221,187,108,.14); color: var(--ink); }
   .dot[aria-current="step"] { background: var(--gold); color: var(--night); border-color: var(--gold); }
   .btn {
@@ -1134,9 +1138,9 @@ const POI = {
   rosenheim: { lat: 47.8561, lon: 12.1289, t: 'Rosenheim', x: 'The Mangfall meets the Inn here. From Rosenheim the line follows the Inn south into the Alps.' },
   wendelstein: { lat: 47.7036, lon: 12.0122, t: 'Wendelstein · 1,838 m', x: 'The peak with the observatory on top. Its cog railway, opened in 1912, is the oldest high-mountain railway in Germany.' },
   border: { lat: 47.6080, lon: 12.1800, t: 'Into Austria', x: 'Just past Kiefersfelden the train crosses from Bavaria into Tyrol. Welcome to Austria.' },
-  kufstein: { lat: 47.5836, lon: 12.1706, t: 'Kufstein Fortress', x: 'First recorded in 1205. The Heroes’ Organ in its tower, the world’s largest open-air organ, plays every day at noon.' },
+  kufstein: { major: 1, lat: 47.5836, lon: 12.1706, t: 'Kufstein Fortress', x: 'First recorded in 1205. The Heroes’ Organ in its tower, the world’s largest open-air organ, plays every day at noon.' },
   kaiser: { lat: 47.5650, lon: 12.3000, t: 'Wilder Kaiser', x: 'The jagged limestone wall east of the valley, topping out at 2,344 m on the Ellmauer Halt.' },
-  rattenberg: { lat: 47.4383, lon: 11.8933, t: 'Rattenberg', x: 'Austria’s smallest town, about 400 people, known for glass-blowing. The hill behind it keeps parts of town in shadow much of the winter.' },
+  rattenberg: { major: 1, lat: 47.4383, lon: 11.8933, t: 'Rattenberg', x: 'Austria’s smallest town, about 400 people, known for glass-blowing. The hill behind it keeps parts of town in shadow much of the winter.' },
   schwaz: { lat: 47.3500, lon: 11.7083, t: 'Schwaz', x: 'In the 1500s one of Europe’s largest silver-mining centres. Its silver bankrolled the Fugger bankers and the Habsburg emperors.' },
   wattens: { lat: 47.2944, lon: 11.6010, t: 'Swarovski Crystal Worlds', x: 'Swarovski has been based in Wattens since 1895. The museum hides under a grassy giant’s head with a waterfall for a mouth.' },
   hall: { lat: 47.2833, lon: 11.5083, t: 'Hall in Tirol', x: 'Its mint struck the Guldiner in 1486, one of the first big silver coins. Its successors, the thalers, gave the dollar its name.' },
@@ -1145,7 +1149,7 @@ const POI = {
   hsl: { lat: 49.0000, lon: 11.3850, t: 'High-speed line', x: 'North of Ingolstadt the train joins a line built for 300 km/h, opened in 2006, much of it in tunnels through the Franconian Jura.' },
   landsberg: { lat: 48.0478, lon: 10.8838, t: 'Landsberg am Lech', x: 'An old town on the Lech. Its Bayertor of 1425 is one of the finest Gothic gates in southern Germany.' },
   schongau: { lat: 47.8125, lon: 10.8967, t: 'Schongau', x: 'A hilltop town still ringed by much of its medieval wall, with a walkway along the top.' },
-  wies: { lat: 47.6811, lon: 10.9002, t: 'Wieskirche', x: 'Worth a 10-minute detour from Steingaden: a Rococo pilgrimage church by Dominikus Zimmermann, finished in 1754 and a UNESCO World Heritage Site.' },
+  wies: { major: 1, lat: 47.6811, lon: 10.9002, t: 'Wieskirche', x: 'Worth a 10-minute detour from Steingaden: a Rococo pilgrimage church by Dominikus Zimmermann, finished in 1754 and a UNESCO World Heritage Site.' },
   forggensee: { lat: 47.6050, lon: 10.7350, t: 'Forggensee', x: 'A huge reservoir on the Lech that is lowered every winter, so in December you may see a wide, empty lakebed.' },
   greatcircle: { at: .32, t: 'Why the route bends north', x: 'On a globe the shortest path from Chicago to Munich arcs up over Canada and the North Atlantic. Flat maps make it look like a detour.' },
   landfall: { at: .78, t: 'Landfall in Europe', x: 'Over Ireland and Britain, then across the Continent for the descent into Munich mid-morning.' },
@@ -1176,7 +1180,7 @@ function setPins(list) {
   pins.forEach(p => p.el.remove()); pins = [];
   for (const p of list) {
     if (!p.lat) continue;
-    const el = document.createElement('div'); el.className = 'pin'; el.innerHTML = '<i></i><span></span>'; el.lastChild.textContent = p.t;
+    const el = document.createElement('div'); el.className = 'pin' + (p.family ? ' fam' : ''); el.innerHTML = '<i></i><span></span>'; el.lastChild.textContent = p.t;
     labelsEl.appendChild(el); pins.push({ p, el });
   }
 }
@@ -1187,7 +1191,7 @@ function showPoi(p, side = '') {
   poiShown = p; poiSideShown = side;
   pins.forEach(q => q.el.classList.toggle('on', q.p === p));
   if (!p) { poiEl.classList.remove('show'); return; }
-  $('poiSide').textContent = side; $('poiTitle').textContent = p.t; $('poiText').textContent = p.x;
+  $('poiSide').textContent = (p.family ? 'Family history · ' : '') + side; $('poiTitle').textContent = p.t; $('poiText').textContent = p.x;
   poiEl.classList.add('show');
 }
 function updatePins() {
@@ -1209,19 +1213,30 @@ function placePois(path, list) {   // distance along the path and which side eac
   }
   return out.sort((a, b) => a.s - b.s);
 }
-function schedule(len, T0, stops) {   // time -> distance, easing off near each waypoint so there is time to read
-  const N = 800, v = len / T0, w = Math.max(.8, v * .3), tt = [0];
-  const speed = s => {
-    let slow = 0; for (const st of stops) slow = Math.max(slow, Math.exp(-(((s - st.s) / w) ** 2)));
-    const ramp = .18 + .82 * smooth(0, len * .05, s) * smooth(0, len * .05, len - s);
-    return v * ramp * (1 - .93 * slow);
-  };
-  for (let i = 1; i <= N; i++) tt.push(tt[i - 1] + (len / N) / speed((i - .5) / N * len));
-  const T = tt[N];
+// About 200 words a minute, plus time to look: never less than 4 s, never more than 11 s.
+function readTime(p) { return clamp(2.5 + p.x.split(/\s+/).length / 3.2, 4, 11); }
+// Time -> distance along a leg. The vehicle travels between waypoints and stops at each one
+// for as long as its story takes to read, so a leg with many stories simply runs longer.
+function schedule(len, T0, stops) {
+  const v = len / T0, segs = [], RAMP = 1.2;
+  let t = 0, s = 0, prev = null;
+  for (const st of [...stops, null]) {
+    const s1 = st ? st.s : len, dt = Math.max(1.4, (s1 - s) / v * 1.15);
+    segs.push({ move: 1, s0: s, s1, t0: t, t1: t + dt, prev, next: st }); t += dt;
+    if (!st) break;
+    const h = readTime(st.p);
+    segs.push({ move: 0, s0: st.s, t0: t, t1: t + h, st }); t += h;
+    s = st.s; prev = st;
+  }
   return {
-    T,
-    s(t) { const x = t * T; let lo = 0, hi = N; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (tt[m] < x) lo = m; else hi = m; } return (lo + (x - tt[lo]) / Math.max(1e-9, tt[hi] - tt[lo])) / N * len; },
-    near(s) { let best = null, bk = 0; for (const st of stops) { const k = Math.exp(-(((s - st.s) / w) ** 2)); if (k > bk) { bk = k; best = st; } } return { st: best, k: bk }; },
+    T: t,
+    at(u) {
+      const x = u * t, g = segs.find(q => x <= q.t1) || segs[segs.length - 1];
+      if (!g.move) return { s: g.s0, st: g.st, k: 1 };
+      const l = clamp((x - g.t0) / (g.t1 - g.t0), 0, 1), e = .5 - .5 * Math.cos(Math.PI * l);
+      const kIn = g.next ? clamp(1 - (g.t1 - x) / RAMP, 0, 1) : 0, kOut = g.prev ? clamp(1 - (x - g.t0) / RAMP, 0, 1) : 0;
+      return kIn >= kOut ? { s: lerp(g.s0, g.s1, e), st: g.next, k: kIn } : { s: lerp(g.s0, g.s1, e), st: g.prev, k: kOut };
+    },
   };
 }
 
@@ -1236,7 +1251,8 @@ const ICON = {
 };
 let ROUTES = {}, STEPS = [];
 
-function buildJourney(geo) {
+const familyPins = [];
+function buildJourney(geo, family = []) {
   const r = geo.routes;
   const P = {
     ictOrd: flightPath(PL.ict, PL.ord), ordMuc: flightPath(PL.ord, PL.muc),
@@ -1250,15 +1266,29 @@ function buildJourney(geo) {
   for (const rv of geo.rivers) riverRibbon(groundPath(rv.pts, .03, .3), rv.name === 'Donau' ? .18 : .08);
 
   const ps = (...k) => k.map(x => POI[x]);
-  const southbound = ps('rosenheim', 'wendelstein', 'border', 'kufstein', 'kaiser', 'rattenberg', 'schwaz', 'wattens', 'hall', 'hafelekar');
-  const northbound = ps('hall', 'schwaz', 'rattenberg', 'kufstein', 'wendelstein', 'rosenheim');
+  // Family places (assets/family.json): near a route they become waypoints, the closest leg wins;
+  // a little further off they still become a sub-step that points them out.
+  const legPaths = { day2: P.aptCity, day4: P.mucIbk, day7: P.ibkMuc, day8: P.mucNue, day9: P.mucNeu };
+  const extra = { day2: [], day4: [], day7: [], day8: [], day9: [] };
+  for (const f of family) {
+    const v = ground(f.lat, f.lon);
+    let best = null;
+    for (const [k, path] of Object.entries(legPaths)) { const n = path.nearest(v); if (!best || n.d < best.d) best = { k, d: n.d }; }
+    if (!best || best.d > 60) continue;
+    const off = best.d > 8 ? ` About ${Math.round(best.d)} km off the route.` : '';
+    extra[best.k].push({ lat: f.lat, lon: f.lon, t: f.name, family: 1, major: f.major !== false || best.d > 8, d: 3,
+      x: [f.people, f.note].filter(Boolean).join('. ') + off });
+  }
+  familyPins.push(...family.map(f => ({ lat: f.lat, lon: f.lon, t: f.name, family: 1 })));
+  const southbound = [...ps('rosenheim', 'wendelstein', 'border', 'kufstein', 'kaiser', 'rattenberg', 'schwaz', 'wattens', 'hall', 'hafelekar'), ...extra.day4];
+  const northbound = [...ps('hall', 'schwaz', 'rattenberg', 'kufstein', 'wendelstein', 'rosenheim').map(p => ({ ...p, major: 0, v: null })), ...extra.day7];
   const overview = () => far({ target: llv(47, -42), dist: 13500, tilt: 0, heading: 0 });
   const munichHome = () => view(48.135, 11.58, 20, 50, 0);
 
   STEPS = [
     { id: 'overview', mode: 'flight', eyebrow: 'Dec 20 – 29, 2026', title: 'Wichita to the Alps and home again',
       meta: '8 travelers · 6 flights · 4 train rides · 1 drive', note: 'Press Next leg to follow the trip day by day. Drag to look around; scroll or pinch to zoom.',
-      routes: [], run: async () => { await flyTo(overview()); orbitIdle(.6); } },
+      routes: [], run: async () => { setPins(familyPins); await flyTo(overview()); orbitIdle(.6); } },
     { id: 'day1', mode: 'flight', eyebrow: 'Day 1 · Sun, Dec 20 · UA786', title: 'Wichita → Chicago O’Hare',
       meta: '7:20 am – 9:32 am · 2h 12m · Boeing 737-800', note: 'Part of the family flies out of Wichita; the rest meet the group at O’Hare.',
       routes: ['ictOrd'], run: () => flight(P.ictOrd, 'ictOrd', far(view(PL.ord.lat, PL.ord.lon, 900, 25, 60)), ps('ohare')) },
@@ -1267,29 +1297,29 @@ function buildJourney(geo) {
       routes: ['ordMuc'], run: () => flight(P.ordMuc, 'ordMuc', view(PL.muc.lat, PL.muc.lon, 22, 58, 210), ps('greatcircle', 'landfall')) },
     { id: 'day2', mode: 'train', pack: 'munich', eyebrow: 'Day 2 · Mon, Dec 21 · S-Bahn S1 / S8', title: 'Munich Airport → Rosenheimer Platz',
       meta: '~40–45 min · stop sits right below the Hilton', note: 'Settle in, fight the jet lag, and head out to the Christmas markets for dinner.',
-      routes: ['aptCity'], run: () => groundLeg(P.aptCity, 'aptCity', 'train', { pois: ps('hilton'), end: view(48.1310, 11.585, 3.2, 62, 300) }) },
+      routes: ['aptCity'], run: () => groundLeg(P.aptCity, 'aptCity', 'train', { pois: [...ps('hilton'), ...extra.day2], end: view(48.1310, 11.585, 3.2, 62, 300) }) },
     { id: 'day3', mode: 'stay', pack: 'munich', eyebrow: 'Day 3 · Tue, Dec 22', title: 'Munich old town',
       meta: 'Mass at the Frauenkirche 8:30 am · Catholic walking tour', note: 'A flat 2.5 km loop through the old town. Each stop pops up in turn; press Next leg any time to move on.',
       routes: [], tour: ps('heiliggeist', 'peter', 'marien', 'frauenMuc', 'michael', 'buergersaal', 'asam'),
       run: (s) => tour(s.tour, view(48.1375, 11.5735, 3.4, 58, 200)) },
-    { id: 'day4', mode: 'train', pack: 'inn', eyebrow: 'Day 4 · Wed, Dec 23 · DB / ÖBB', title: 'Munich → Innsbruck',
-      meta: '~2.5 hrs · via Rosenheim & Kufstein, up the Inn valley', note: 'Watch for the stories as you pass: the line follows the River Inn into Tyrol.',
-      routes: ['mucIbk'], run: () => groundLeg(P.mucIbk, 'mucIbk', 'train', { pois: southbound, end: view(47.2700, 11.3925, 4.5, 66, 340) }) },
+    ...legSteps({ id: 'day4', mode: 'train', pack: 'inn', eyebrow: 'Day 4 · Wed, Dec 23 · DB / ÖBB', title: 'Munich → Innsbruck',
+      meta: '~2.5 hrs · via Rosenheim & Kufstein, up the Inn valley', note: 'The line follows the River Inn into Tyrol. The train pauses at each story; bigger sights get their own stop.',
+      routes: ['mucIbk'] }, P.mucIbk, 'mucIbk', 'train', { pois: southbound, end: view(47.2700, 11.3925, 4.5, 66, 340) }),
     { id: 'day5', mode: 'stay', pack: 'inn', snow: 1, eyebrow: 'Day 5 – 6 · Dec 24 – 25', title: 'Christmas in Innsbruck',
       meta: 'Dinner at the Ottoburg 5:00 pm · Midnight Mass, Dom St. Jakob 11:30 pm', note: 'Hotel Mondschein sits on the Inn, under the snowy Nordkette. Christmas Day is free for the city and nearby getaways.',
       routes: [], tour: ps('mondschein', 'ottoburg', 'dachl', 'dom', 'hofkirche', 'bergisel'),
       run: (s) => tour(s.tour, view(47.2686, 11.3933, 6.5, 68, 340), 1.2) },
-    { id: 'day7', mode: 'train', pack: 'inn', eyebrow: 'Day 7 · Sat, Dec 26 · ÖBB / DB', title: 'Innsbruck → Munich',
+    ...legSteps({ id: 'day7', mode: 'train', pack: 'inn', eyebrow: 'Day 7 · Sat, Dec 26 · ÖBB / DB', title: 'Innsbruck → Munich',
       meta: '~2.5 hrs · back to the Hilton Munich City for 3 nights', note: 'Down the Inn valley and out onto the Bavarian plain. Edelweiss cooking class sometime this stay.',
-      routes: ['mucIbk'], run: () => groundLeg(P.ibkMuc, 'mucIbk', 'train', { pois: northbound, end: munichHome() }) },
-    { id: 'day8', mode: 'train', pack: 'nue', eyebrow: 'Day 8 · Sun, Dec 27 · day trip', title: 'Nuremberg',
+      routes: ['mucIbk'] }, P.ibkMuc, 'mucIbk', 'train', { pois: northbound, end: munichHome() }),
+    ...legSteps({ id: 'day8', mode: 'train', pack: 'nue', eyebrow: 'Day 8 · Sun, Dec 27 · day trip', title: 'Nuremberg',
       meta: '~1 hr each way by ICE', note: 'One of Germany’s oldest Christmas markets, dating to the 16th century. The market usually ends on Christmas Eve, so check before you go.',
-      routes: ['mucNue'], run: () => groundLeg(P.mucNue, 'mucNue', 'train', { pois: ps('ingolstadt', 'hsl'), roundTrip: P.nueMuc,
-        tour: ps('kaiserburg', 'hauptmarkt', 'lorenz'), stop: view(PL.nue.lat, PL.nue.lon, 4, 58, 330) }) },
-    { id: 'day9', mode: 'car', pack: 'neu', eyebrow: 'Day 9 · Mon, Dec 28 · private car', title: 'Neuschwanstein',
+      routes: ['mucNue'] }, P.mucNue, 'mucNue', 'train', { pois: [...ps('ingolstadt', 'hsl'), ...extra.day8], roundTrip: P.nueMuc,
+        tour: ps('kaiserburg', 'hauptmarkt', 'lorenz'), stop: view(PL.nue.lat, PL.nue.lon, 4, 58, 330) }),
+    ...legSteps({ id: 'day9', mode: 'car', pack: 'neu', eyebrow: 'Day 9 · Mon, Dec 28 · private car', title: 'Neuschwanstein',
       meta: '~2.5 hrs each way · timed-entry castle tickets', note: 'King Ludwig II’s unfinished fantasy castle, begun in 1869, above Hohenschwangau and the Alpsee.',
-      routes: ['mucNeu'], run: () => groundLeg(P.mucNeu, 'mucNeu', 'car', { pois: ps('landsberg', 'schongau', 'wies', 'forggensee'), roundTrip: P.neuMuc,
-        tour: ps('hohensch', 'neusch', 'marienbr'), stop: view(PL.neu.lat, PL.neu.lon, 3.5, 62, 175) }) },
+      routes: ['mucNeu'] }, P.mucNeu, 'mucNeu', 'car', { pois: [...ps('landsberg', 'schongau', 'wies', 'forggensee'), ...extra.day9], roundTrip: P.neuMuc,
+        tour: ps('hohensch', 'neusch', 'marienbr'), stop: view(PL.neu.lat, PL.neu.lon, 3.5, 62, 175) }),
     { id: 'day10', mode: 'flight', eyebrow: 'Day 10 · Tue, Dec 29', title: 'Munich → home to Wichita',
       meta: 'Via Denver: UA9459 11:50 am, UA4788 → ICT 8:02 pm · Via Chicago: UA952, UA2762 → ICT 11:52 pm', note: 'The family splits for the trip home: six through Denver, two through O’Hare.',
       routes: ['mucDen', 'denIct', 'mucOrd', 'ordIct'], run: homeward },
@@ -1318,22 +1348,32 @@ function buildJourney(geo) {
     plane.visible = false;
     await flyTo(end); state.progress = 1;
   }
+  // One part of a ground leg, from s0 to s1 km along the path. A part that starts at a major
+  // waypoint (a sub-step such as 4.1) first parks there and looks around while the story is read.
   async function groundLeg(path, key, kind, o = {}) {
     const draw = kind === 'train' ? drawTrain : drawVan;
-    const tan0 = new V3(); path.at(0.5, new V3(), tan0);
-    const h0 = headingOf(path.p[0], tan0);
-    setPins(o.pois || []);
-    const stops = placePois(path, o.pois || []);
-    if (!await flyTo({ target: path.p[0].clone(), dist: 7 * fitClose, tilt: 62, heading: h0 })) return;
-    const T0 = reduceMotion ? .01 : clamp(path.len / 9, 5, 16);
-    const sch = schedule(path.len, T0, state.stories ? stops : []);
+    const s0 = o.s0 || 0, s1 = o.s1 ?? path.len, last = s1 >= path.len - 1e-6, fwd = path === ROUTES[key].path;
+    const tan0 = new V3(), p0 = path.at(s0 + .3, new V3(), tan0);
+    const h0 = headingOf(p0, tan0);
+    setPins([...(o.pois || []), ...(o.focus ? [o.focus.p] : [])]);
+    const stops = placePois(path, o.pois || []).filter(st => st.s > s0 + .3 && st.s < s1 - .3 && !(st.p.major && st.s > s0));
+    ROUTES[key].set('uReveal', fwd ? s0 : path.len);
+    if (o.focus) {
+      const f = o.focus.p, turn = o.focus.side === 'On your right' ? 70 : o.focus.side === 'On your left' ? -70 : 0;
+      draw(path, s0);
+      if (!await flyTo(view(f.lat, f.lon, f.d || 2.6, 60, h0 + turn))) return false;
+      if (!await anim(reduceMotion ? 3 : readTime(f) + 3, t => { cam.heading += .05 * clock.speed; state.progress = t * .3; })) return false;
+    }
+    if (!await flyTo({ target: p0.clone(), dist: 7 * fitClose, tilt: 62, heading: h0 }, o.focus ? 2.2 : undefined)) return false;
+    const len = s1 - s0, T0 = reduceMotion ? .01 : clamp(len / 9, 3.5, 16);
+    const sch = schedule(len, T0, state.stories ? stops.map(st => ({ ...st, s: st.s - s0 })) : []);
     let hd = h0, look = 0;
-    const camTarget = new V3();
+    const camTarget = new V3(), base = o.focus ? .3 : 0;
     const ok = await anim(reduceMotion ? .01 : sch.T, t => {
-      const d = sch.s(t), pos = draw(path, d);
-      ROUTES[key].set('uReveal', path === ROUTES[key].path ? d : ROUTES[key].path.len);
+      const a = sch.at(t), d = s0 + a.s, pos = draw(path, d);
+      ROUTES[key].set('uReveal', fwd ? d : path.len);
       path.at(Math.min(path.len, d + 2), _tp, _tan);
-      const nr = sch.near(d), k = nr.k;
+      const nr = a, k = a.k;
       let want = headingOf(pos, _tan);
       if (nr.st && nr.st.p.lat && k > .05) {               // turn the camera toward the waypoint
         nr.st.p.v = nr.st.p.v || ground(nr.st.p.lat, nr.st.p.lon, .03);
@@ -1344,16 +1384,17 @@ function buildJourney(geo) {
       cam.target.copy(camTarget); cam.heading = hd;
       cam.dist = (6.5 + 9 * Math.sin(Math.PI * t) * (1 - look)) * fitClose; cam.tilt = 64 - 6 * Math.sin(Math.PI * t);
       showPoi(k > .35 && nr.st ? nr.st.p : null, nr.st ? nr.st.side : '');
-      state.progress = t * (o.roundTrip ? .45 : .85);
+      state.progress = base + t * ((o.roundTrip && last) ? .45 : .85) * (1 - base);
     });
     showPoi(null);
-    if (!ok) return;
+    if (!ok) return false;
+    if (!last) return true;               // the next sub-step picks up from here
     if (o.roundTrip) {
-      if (!await tour(o.tour, o.stop, 0, true)) return;
+      if (!await tour(o.tour, o.stop, 0, true)) return false;
       const back = o.roundTrip, mid = back.p[0].clone().add(back.p[back.p.length - 1]).multiplyScalar(.5);
       setPins([]);
-      if (!await flyTo({ target: mid, dist: (back.len * 1.15 + 20) * fit, tilt: 30, heading: 0 }, 2)) return;
-      if (!await anim(reduceMotion ? .01 : 4, t => { draw(back, ease(t) * back.len); state.progress = .6 + t * .4; })) return;
+      if (!await flyTo({ target: mid, dist: (back.len * 1.15 + 20) * fit, tilt: 30, heading: 0 }, 2)) return false;
+      if (!await anim(reduceMotion ? .01 : 4, t => { draw(back, ease(t) * back.len); state.progress = .6 + t * .4; })) return false;
       hideVehicles();
       await flyTo(munichHome(), 2);
     } else {
@@ -1362,6 +1403,24 @@ function buildJourney(geo) {
       orbitIdle(.8);
     }
     state.progress = 1;
+    return false;
+  }
+  // Split a ground leg at its major waypoints: the leg itself, then 4.1, 4.2 ... which chain on automatically.
+  function legSteps(step, path, key, kind, o) {
+    const majors = placePois(path, o.pois).filter(st => st.p.major && st.s > 1 && st.s < path.len - 1);
+    const cuts = [0, ...majors.map(m => m.s), path.len];
+    return cuts.slice(0, -1).map((c, i) => {
+      const focus = i ? majors[i - 1] : null;
+      const part = i ? {
+        id: `${step.id}-${focus.p.t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`, sub: i, mode: step.mode, pack: step.pack,
+        eyebrow: `${step.eyebrow.split(' · ')[0]}.${i} · ${focus.p.family ? 'Family history' : 'Along the way'} · ${focus.side.toLowerCase()}`,
+        title: focus.p.t, meta: `${step.title} · about ${Math.round(focus.s)} km in`, note: focus.p.x, routes: step.routes, family: focus.p.family,
+      } : { ...step };
+      part.chain = i < cuts.length - 2;
+      part.routeFrom = c;
+      part.run = () => groundLeg(path, key, kind, { ...o, s0: c, s1: cuts[i + 1], focus });
+      return part;
+    });
   }
   async function homeward() {
     const a = P.mucDen, b = P.denIct, c = P.mucOrd, d2 = P.ordIct;
@@ -1418,7 +1477,7 @@ function setRouteStyles(i) {
   const active = new Set(STEPS[i].routes);
   const done = new Set(); STEPS.slice(0, i).forEach(s => s.routes.forEach(r => done.add(r)));
   for (const [k, r] of Object.entries(ROUTES)) {
-    if (active.has(k)) { r.set('uAlpha', .95); r.set('uReveal', 0); }
+    if (active.has(k)) { r.set('uAlpha', .95); r.set('uReveal', STEPS[i].routeFrom || 0); }
     else if (done.has(k)) { r.set('uAlpha', .7); r.set('uReveal', r.path.len); }
     else { r.set('uAlpha', i === 0 || i === STEPS.length - 1 ? .75 : .2); r.set('uReveal', r.path.len); }
   }
@@ -1437,11 +1496,16 @@ async function go(i) {
   hideVehicles(); setRouteStyles(state.step); renderUI(); showPoi(null); setPins([]);
   try { if (location.hash !== '#' + s.id) history.replaceState(null, '', '#' + s.id); } catch (e) {}
   usePack(s.pack);                      // detail loads while the camera is still flying in
-  await s.run(s);
+  const my = token, done = await s.run(s);
+  if (done === true && s.chain && my === token) go(state.step + 1);
 }
 function buildDots() {
+  let day = '';
   STEPS.forEach((s, i) => {
-    const b = document.createElement('button'); b.className = 'dot'; b.textContent = i === 0 ? '★' : i === STEPS.length - 1 ? '⌂' : String(i);
+    if (!s.sub) day = s.id === 'day1b' ? '1b' : s.id.replace(/^day/, '');   // dots carry the day number, sub-steps 4.1, 4.2 ...
+    const b = document.createElement('button');
+    b.className = 'dot' + (s.sub ? ' sub' : '') + (s.family ? ' fam' : '');
+    b.textContent = i === 0 ? '★' : i === STEPS.length - 1 ? '⌂' : s.sub ? `${day}.${s.sub}` : day;
     b.setAttribute('aria-label', s.title); b.title = s.title; b.onclick = () => go(i);
     $('dots').appendChild(b);
   });
@@ -1559,8 +1623,9 @@ function loadHeight(url) {
       loadTex('assets/region.jpg'), loadTex('assets/innsbruck.jpg'), loadHeight('assets/region-height.png'),
       fetch('assets/geo.json').then(r => r.json()),
     ]);
+    const family = await fetch('assets/family.json').then(r => r.ok ? r.json() : {}).catch(() => ({}));
     HF = hm.f; terrainMat.uniforms.map.value = region; terrainMat.uniforms.ibk.value = ibk; terrainMat.uniforms.hmap.value = hm.t;
-    buildTerrain(); buildSprites(); buildLandmarks(); buildJourney(geo); buildDots();
+    buildTerrain(); buildSprites(); buildLandmarks(); buildJourney(geo, (family.places || []).filter(f => isFinite(f.lat) && isFinite(f.lon))); buildDots();
     requestAnimationFrame(frame);
     $('loading').classList.add('gone');
     if (DEBUG) window.__dbg = { set: (la, lo, d, t, h) => { token.dead = true; token = { dead: false }; state.orbit = 0; state.veil = 0; Object.assign(cam, view(la, lo, d, t, h)); }, cam, view, go, state, usePack, clock, setPaused, POI, scene };

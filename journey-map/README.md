@@ -37,6 +37,35 @@ the file directly from disk won't load the map data).
 - Phone layout: the camera frames the action in the space between the header
   and the card, and wide shots pull back further on narrow screens.
 
+## Pacing and sub-steps
+
+The train or car stops at each story for as long as it takes to read (about
+200 words a minute, 4–11 seconds), so legs with more stories run longer.
+Bigger sights get their own numbered sub-step that the leg runs straight
+into: 4.1 Kufstein Fortress, 4.2 Rattenberg, 9.1 the Wieskirche. To promote any
+other story to a sub-step, add `major: 1` to it in the `POI` list in
+`index.html`.
+
+## Family places
+
+`assets/family.json` holds places from the family tree. Each entry needs
+`name`, `lat` and `lon`; `people` and `note` are shown on its story card.
+For example:
+
+```json
+{ "places": [
+  { "name": "Rosenheim", "lat": 47.856, "lon": 12.129,
+    "people": "Great-great-grandmother Anna, born 1871",
+    "note": "Baptised at St. Nikolaus" }
+] }
+```
+
+A place within about 8 km of a route becomes a stop on the closest leg, with a
+red "Family history" card and dot. A place up to 60 km away still becomes a
+sub-step that says how far off the route it is. All family places show as pins
+on the opening globe view. This file is public once the site is published, so
+keep anything private out of it.
+
 ## Linking from the itinerary
 
 Each leg has an anchor that matches the day cards in the itinerary page
