@@ -25,6 +25,7 @@
     --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     color-scheme: dark;
   }
+  [hidden] { display: none !important; }
   html, body { height: 100%; }
   body {
     margin: 0; overflow: hidden; background: var(--night); color: var(--ink);
@@ -152,6 +153,29 @@
   .btn:disabled { opacity: .35; cursor: default; }
   .btn.icon { padding: 10px 12px; }
 
+  .gpanel {
+    top: calc(env(safe-area-inset-top, 0px) + 62px); right: max(16px, env(safe-area-inset-right, 0px));
+    width: min(360px, calc(100vw - 32px)); background: var(--glass); border: 1px solid var(--glass-line); border-radius: 14px;
+    padding: 14px; display: grid; gap: 8px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); z-index: 7;
+  }
+  .gpanel strong { font-size: 16px; }
+  .gpanel p { margin: 0; font-size: 13px; opacity: .88; }
+  .gpanel label { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); }
+  .gform { display: grid; gap: 6px; margin: 0; }
+  .gpanel input {
+    font: 500 13px var(--font-mono); color: var(--ink); background: rgba(0,0,0,.35); border: 1px solid var(--glass-line);
+    border-radius: 8px; padding: 9px 10px; width: 100%; box-sizing: border-box;
+  }
+  .gpanel input:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+  .gpanel .gmsg { color: var(--red); font-size: 12.5px; min-height: 1em; }
+  .gpanel .row { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+  .toast {
+    left: 50%; top: calc(env(safe-area-inset-top, 0px) + 62px); transform: translate(-50%, -6px); opacity: 0; pointer-events: none;
+    background: var(--glass); border: 1px solid var(--glass-line); border-radius: 10px; padding: 9px 12px; font-size: 13px;
+    max-width: calc(100vw - 32px); transition: opacity .4s, transform .4s; z-index: 6;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .credit.google { color: var(--ink); font-size: 11px; display: block; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
   #loading {
     position: fixed; inset: 0; z-index: 9; display: grid; place-items: center; background: var(--night);
     transition: opacity .8s;
@@ -203,7 +227,20 @@
   <button class="chip" id="tWinter" aria-pressed="true">Winter snow</button>
   <button class="chip" id="tClouds" aria-pressed="true">Clouds</button>
   <button class="chip" id="tStories" aria-pressed="true">Stories</button>
+  <button class="chip" id="tPhoto" aria-pressed="false">3D cities</button>
 </div>
+
+<div class="ui gpanel" id="gpanel" hidden>
+  <strong>Photo-real cities</strong>
+  <p>During city tours and stops, the map switches to Google&rsquo;s Photorealistic 3D Tiles: real 3D scans of Munich, Innsbruck, Nuremberg and the castles. Paste a Google Maps API key with the Map Tiles API turned on. It&rsquo;s saved only in this browser.</p>
+  <form id="gform" class="gform">
+    <label for="gkey">Google Maps API key</label>
+    <input id="gkey" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
+  </form>
+  <p class="gmsg" id="gmsg"></p>
+  <div class="row"><button class="btn" id="gforget">Remove key</button><button class="btn" id="gcancel">Close</button><button class="btn primary" id="gsave">Save key</button></div>
+</div>
+<div class="ui toast" id="toast" role="status"></div>
 
 <aside class="ui poi" id="poi" aria-live="polite">
   <span class="side" id="poiSide"></span>
@@ -235,10 +272,16 @@
 
 <div id="loading"><div><strong>Packing the sleigh&hellip;</strong><span id="loadmsg">Loading globe</span></div></div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+  "3d-tiles-renderer": "https://cdn.jsdelivr.net/npm/3d-tiles-renderer@0.3.39/src/index.js"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
 (() => {
-'use strict';
 const V3 = THREE.Vector3;
 const R = 6371;                     // world units are kilometres
 const D2R = Math.PI / 180;
@@ -279,7 +322,10 @@ function heightM(lat, lon) {
   const fx = clamp(x - x0, 0, 1), fy = clamp(y - y0, 0, 1), i = y0 * HW + x0;
   return lerp(lerp(HF[i], HF[i + 1], fx), lerp(HF[i + HW], HF[i + HW + 1], fx), fy);
 }
+let city = null;                    // set while Google's photo-real tiles replace the map (true heights, no exaggeration)
+const GEOID_M = 47;                 // geoid height over the WGS84 ellipsoid around Bavaria and Tyrol
 function terrainKm(lat, lon) {
+  if (city) return (heightM(lat, lon) + GEOID_M) / 1000 + 0.002;
   const u = (lon - BB.W) / (BB.E - BB.W), v = (lat - BB.S) / (BB.N - BB.S);
   if (u <= 0 || u >= 1 || v <= 0 || v >= 1) return 0;
   return heightM(lat, lon) / 1000 * EXAG * edgeFade(u, v) + 0.002;
@@ -477,6 +523,8 @@ const terrainMat = new THREE.ShaderMaterial({
       gl_FragColor=vec4(col,1.); gl_FragColor=linearToOutputTexel(gl_FragColor);
     }`,
 });
+let terrainMesh = null;
+const ribbonMeshes = [];
 function buildTerrain() {
   const NX = phone() ? 440 : 720, NY = phone() ? 660 : 1080;
   const pos = new Float32Array(NX * NY * 3), uv = new Float32Array(NX * NY * 2), v = new V3();
@@ -495,7 +543,7 @@ function buildTerrain() {
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   g.computeBoundingSphere(); g.boundingSphere.radius += 10;
-  scene.add(new THREE.Mesh(g, terrainMat));
+  terrainMesh = new THREE.Mesh(g, terrainMat); scene.add(terrainMesh);
   const c = llv(48.0, 11.3, 0), f = enu(c), az = 165 * D2R, el = 24 * D2R;
   uni.uRegionSun.value.copy(f.east).multiplyScalar(Math.sin(az) * Math.cos(el))
     .addScaledVector(f.north, Math.cos(az) * Math.cos(el)).addScaledVector(f.up, Math.sin(el)).normalize();
@@ -858,7 +906,7 @@ function routeRibbon(path, color, dashed) {
           gl_FragColor=vec4(uColor*(1.1-.35*abs(vSide)),a${xray ? '*.28' : ''}); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
     });
     const mesh = new THREE.Mesh(g, m); mesh.renderOrder = xray ? 3 : 2; mesh.frustumCulled = false;
-    scene.add(mesh); mats.push(m);
+    scene.add(mesh); mats.push(m); ribbonMeshes.push(mesh);
   }
   return { path, mats, set(k, v) { for (const m of mats) m.uniforms[k].value = v; } };
 }
@@ -876,7 +924,7 @@ function riverRibbon(path, worldW) {
         gl_FragColor=vec4(c,a); gl_FragColor=linearToOutputTexel(gl_FragColor);
       }`,
   });
-  const mesh = new THREE.Mesh(ribbonGeom(path), m); mesh.renderOrder = 1; mesh.frustumCulled = false; scene.add(mesh);
+  const mesh = new THREE.Mesh(ribbonGeom(path), m); mesh.renderOrder = 1; mesh.frustumCulled = false; scene.add(mesh); ribbonMeshes.push(mesh);
 }
 
 /* ---------- vehicles (built in code; stand-ins for Blender .glb models) ---------- */
@@ -1055,7 +1103,7 @@ function updateViewOffset() {
   fit = clamp(ref / cur, 1, 2.4); fitClose = Math.sqrt(fit);
 }
 function headingOf(pos, tan) { const f = enu(pos); return Math.atan2(tan.dot(f.east), tan.dot(f.north)) / D2R; }
-function view(lat, lon, dist, tilt = 0, heading = 0) { return { target: ground(lat, lon), dist: dist * fitClose, tilt, heading }; }
+function view(lat, lon, dist, tilt = 0, heading = 0) { return { target: ground(lat, lon), dist: dist * fitClose, tilt, heading, lat, lon }; }
 const far = (v) => ({ ...v, dist: v.dist / fitClose * fit });
 
 const clock = { t: 0, speed: 1 };
@@ -1240,6 +1288,119 @@ function schedule(len, T0, stops) {
   };
 }
 
+/* ---------- photo-real cities: Google Photorealistic 3D Tiles ---------- */
+// The tiles are in ECEF metres on the WGS84 ellipsoid; this map is a sphere in kilometres. Each city gets its
+// own anchor: the tiles are moved so the anchor's ground point and its east / north / up line up exactly,
+// which is accurate to well under a metre across a city. While they show, the rest of the map is hidden.
+const photo = { key: '', tiles: null, failed: '', wanted: true, loading: null };
+function ecefToWorld(lat, lon) {
+  const a = 6378137, e2 = 6.69437999014e-3, p = lat * D2R, l = lon * D2R;
+  const sp = Math.sin(p), cp = Math.cos(p), sl = Math.sin(l), cl = Math.cos(l), N = a / Math.sqrt(1 - e2 * sp * sp);
+  const Pe = new V3(N * cp * cl, N * cp * sl, N * (1 - e2) * sp);
+  const Be = new THREE.Matrix4().makeBasis(new V3(-sl, cl, 0), new V3(-sp * cl, -sp * sl, cp), new V3(cp * cl, cp * sl, sp));
+  const Pm = llv(lat, lon, 0), f = enu(Pm);
+  return new THREE.Matrix4().makeTranslation(Pm.x, Pm.y, Pm.z)
+    .multiply(new THREE.Matrix4().makeBasis(f.east, f.north, f.up))
+    .multiply(new THREE.Matrix4().makeScale(.001, .001, .001))
+    .multiply(Be.transpose())
+    .multiply(new THREE.Matrix4().makeTranslation(-Pe.x, -Pe.y, -Pe.z));
+}
+function photoInit() {
+  if (!photo.key) return Promise.resolve(null);
+  if (photo.loading) return photo.loading;
+  photo.failed = '';
+  photo.loading = (async () => {
+    const [{ TilesRenderer, GoogleCloudAuthPlugin }, { GLTFLoader }, { DRACOLoader }] = await Promise.all([
+      import('3d-tiles-renderer'), import('three/examples/jsm/loaders/GLTFLoader.js'), import('three/examples/jsm/loaders/DRACOLoader.js'),
+    ]);
+    const tiles = new TilesRenderer();
+    const auth = new GoogleCloudAuthPlugin({ apiToken: photo.key }), fetchData = auth.fetchData.bind(auth);
+    auth.fetchData = async (uri, opts) => {                     // report a rejected key or a blocked host
+      const root = /\/root\.json/.test(uri);
+      try {
+        const res = await fetchData(uri, opts);
+        if (root && !res.ok) photo.failed = `Google refused the key (HTTP ${res.status}).`;
+        return res;
+      } catch (err) {
+        if (root && err.name !== 'AbortError') photo.failed = 'Couldn\u2019t reach Google\u2019s 3D tile servers from this page.';
+        throw err;
+      }
+    };
+    tiles.registerPlugin(auth);
+    const draco = new DRACOLoader(); draco.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+    const gltf = new GLTFLoader(tiles.manager); gltf.setDRACOLoader(draco);
+    tiles.manager.addHandler(/\.(gltf|glb)$/, gltf);
+    if (phone()) tiles.errorTarget = 60;
+    tiles.setCamera(camera); tiles.setResolutionFromRenderer(camera, renderer);
+    tiles.group.matrixAutoUpdate = false; tiles.group.visible = false;
+    scene.add(tiles.group);
+    photo.tiles = tiles;
+    return tiles;
+  })().catch(err => { console.warn(err); photo.failed = 'The 3D tiles library didn\u2019t load.'; return null; });
+  return photo.loading;
+}
+const photoUsable = () => photo.key && photo.wanted && !photo.failed;
+function reground(v) { const n = v.clone().normalize(); return ground(Math.asin(n.y) / D2R, Math.atan2(n.x, n.z) / D2R); }
+function setCity(c) {
+  if (!c && !city) return;
+  city = c;
+  const tiles = photo.tiles;
+  if (tiles) {
+    tiles.group.visible = !!c;
+    if (c) { tiles.group.matrix.copy(ecefToWorld(c.lat, c.lon)); tiles.group.matrixWorldNeedsUpdate = true; tiles.group.updateMatrixWorld(true); }
+  }
+  for (const o of [terrainMesh, globe, atmo, cloudShell, ...ribbonMeshes, ...sprites]) if (o) o.visible = !c;
+  if (state.packMesh) state.packMesh.visible = !c;
+  for (const p of Object.values(PL)) p.v = null;              // heights change: drop cached positions
+  for (const p of Object.values(POI)) p.v = null;
+  for (const q of pins) q.p.v = null;
+  cam.target.copy(reground(cam.target));
+  hideVehicles();
+  updateCredit();
+}
+const creditEl = document.querySelector('.credit'), creditDefault = creditEl.textContent;
+let creditShown = '';
+function updateCredit() {
+  let txt = creditDefault;
+  if (city && photo.tiles) {
+    const out = []; photo.tiles.getAttributions(out);
+    txt = 'Google' + out.filter(a => a.type === 'string' && a.value).map(a => ' \u00b7 ' + a.value).join('');
+  }
+  if (txt === creditShown) return;
+  creditShown = txt; creditEl.textContent = txt; creditEl.classList.toggle('google', !!city);
+}
+let toastTimer = 0;
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 5000);
+}
+function fadeVeil(to, dur) { const from = state.veil; return anim(reduceMotion ? .01 : dur, t => { state.veil = lerp(from, to, ease(t)); }); }
+// Swap to the photo-real city under a bank of cloud, give the tiles a moment to stream, then clear.
+async function enterCity(v) {
+  if (!photoUsable()) return true;
+  const tiles = await photoInit();
+  if (!tiles || photo.failed) { photoChip(); if (photo.failed) toast(photo.failed + ' Showing the regular map.'); return true; }
+  if (!await fadeVeil(.97, .8)) return false;
+  setCity({ lat: v.lat, lon: v.lon });
+  let calm = 0;
+  const ok = await anim(4, t => {                                  // up to 4 s, less once the view has loaded
+    const busy = tiles.stats.downloading + tiles.stats.parsing;
+    calm = busy ? 0 : calm + 1;
+    if (photo.failed) t = 1;
+    if (t > .3 && calm > 20) state.veil = Math.max(0, state.veil - .08);
+  });
+  if (photo.failed) { setCity(null); photoChip(); toast(photo.failed + ' Showing the regular map.'); }
+  if (!ok) return false;
+  return fadeVeil(0, .9);
+}
+async function exitCity() {
+  if (!city) return true;
+  if (!await fadeVeil(.97, .7)) return false;
+  setCity(null);
+  return fadeVeil(0, .8);
+}
+const rg = v => (v && v.lat != null ? { ...v, target: ground(v.lat, v.lon) } : v);
+
 /* ---------- journey ---------- */
 const state = { clouds: 1, winter: 1, stories: 1, veil: 0, veilOff: new THREE.Vector2(), snow: 0, snowTarget: 0, orbit: 0, step: 0, progress: 0, packMesh: null };
 const COL = { flight: 0xDDBB6C, train: 0xE2677A, car: 0x79C596 };
@@ -1362,7 +1523,10 @@ function buildJourney(geo, family = []) {
       const f = o.focus.p, turn = o.focus.side === 'On your right' ? 70 : o.focus.side === 'On your left' ? -70 : 0;
       draw(path, s0);
       if (!await flyTo(view(f.lat, f.lon, f.d || 2.6, 60, h0 + turn))) return false;
+      if (!await enterCity(f)) return false;
       if (!await anim(reduceMotion ? 3 : readTime(f) + 3, t => { cam.heading += .05 * clock.speed; state.progress = t * .3; })) return false;
+      if (!await exitCity()) return false;
+      draw(path, s0);
     }
     if (!await flyTo({ target: p0.clone(), dist: 7 * fitClose, tilt: 62, heading: h0 }, o.focus ? 2.2 : undefined)) return false;
     const len = s1 - s0, T0 = reduceMotion ? .01 : clamp(len / 9, 3.5, 16);
@@ -1446,6 +1610,7 @@ function buildJourney(geo, family = []) {
 async function tour(stops, base, rate = 1, partOfLeg = false) {
   hideVehicles(); setPins(stops);
   if (!await flyTo(base, partOfLeg ? 2.4 : undefined)) return false;
+  if (!await enterCity(base)) return false;
   for (let i = 0; i < stops.length; i++) {
     const p = stops[i];
     if (!await flyTo(view(p.lat, p.lon, p.d || 1.1, 60, (cam.heading + 35) % 360), 2)) return false;
@@ -1453,7 +1618,8 @@ async function tour(stops, base, rate = 1, partOfLeg = false) {
     if (!await anim(reduceMotion ? 3 : 5.5, t => { cam.heading += .06 * clock.speed; state.progress = (i + t) / stops.length * (partOfLeg ? .15 : 1) + (partOfLeg ? .45 : 0); })) return false;
   }
   showPoi(null);
-  if (!await flyTo(base, 2)) return false;
+  if (!await flyTo(rg(base), 2)) return false;
+  if (partOfLeg && !await exitCity()) return false;
   if (!partOfLeg) { state.progress = 1; orbitIdle(rate); }
   return true;
 }
@@ -1489,7 +1655,7 @@ function setPaused(p) {
 }
 async function go(i) {
   token.dead = true; token = { dead: false };
-  setPaused(false);
+  setPaused(false); setCity(null);
   state.step = (i + STEPS.length) % STEPS.length; state.progress = 0; state.orbit = 0; state.veil = 0;
   const s = STEPS[state.step];
   state.snowTarget = s.snow ? 1 : 0;
@@ -1525,6 +1691,25 @@ addEventListener('keydown', e => {
 function toggle(btn, key, after) {
   btn.onclick = () => { state[key] = state[key] ? 0 : 1; btn.setAttribute('aria-pressed', state[key] ? 'true' : 'false'); after && after(); };
 }
+function readKey() { try { return localStorage.getItem('gmapsKey') || ''; } catch (e) { return ''; } }
+function writeKey(k) { try { k ? localStorage.setItem('gmapsKey', k) : localStorage.removeItem('gmapsKey'); } catch (e) {} }
+function photoChip() { $('tPhoto').setAttribute('aria-pressed', photoUsable() ? 'true' : 'false'); }
+function openPanel(msg = '') { $('gpanel').hidden = false; $('gmsg').textContent = msg; $('gkey').value = photo.key; $('gkey').focus(); }
+function setKey(k) {
+  photo.key = k; photo.failed = ''; photo.wanted = true;
+  if (photo.tiles) { setCity(null); scene.remove(photo.tiles.group); photo.tiles.dispose(); photo.tiles = null; }
+  photo.loading = null; photoChip();
+}
+$('tPhoto').onclick = () => {
+  if (!photo.key || photo.failed) return openPanel(photo.failed);
+  photo.wanted = !photo.wanted; if (!photo.wanted) exitCity();
+  photoChip(); toast(photo.wanted ? 'Photo-real cities on for tours and stops.' : 'Photo-real cities off.');
+};
+$('gsave').onclick = () => { const k = $('gkey').value.trim(); writeKey(k); setKey(k); $('gpanel').hidden = true; if (k) toast('Key saved. Cities switch to photo-real on the next tour or stop.'); };
+$('gforget').onclick = () => { writeKey(''); setKey(''); $('gkey').value = ''; $('gmsg').textContent = 'Key removed from this browser.'; };
+$('gcancel').onclick = () => { $('gpanel').hidden = true; };
+$('gform').addEventListener('submit', e => { e.preventDefault(); $('gsave').click(); });
+$('gkey').addEventListener('keydown', e => { if (e.key === 'Escape') $('gcancel').click(); });
 toggle($('tWinter'), 'winter'); toggle($('tClouds'), 'clouds'); toggle($('tStories'), 'stories', () => { if (!state.stories) showPoi(null); });
 
 /* ---------- pointer: drag to look around, wheel / pinch to zoom ---------- */
@@ -1554,6 +1739,7 @@ function resize() {
   uni.uFocal.value = uni.uRes.value.y / (2 * Math.tan(camera.fov * D2R / 2));
   snowCv.width = w * devicePixelRatio; snowCv.height = h * devicePixelRatio;
   viewKey = ''; updateViewOffset();
+  if (photo.tiles) photo.tiles.setResolutionFromRenderer(camera, renderer);
 }
 addEventListener('resize', resize); resize();
 const bgSpace = new THREE.Color(0x03060c), bgSky = new THREE.Color(0x9fb4cc), bg = new THREE.Color(), snowWhite = new THREE.Color(0xf2f5f8);
@@ -1574,7 +1760,8 @@ function frame(now) {
   for (const r of roofMats) r.m.color.copy(r.base).lerp(snowWhite, .7 * winterV);
   const du = terrainMat.uniforms.uDetOn; if (terrainMat.uniforms.det.value) du.value = Math.min(1, du.value + dt * 1.5);
   if (state.packMesh) { const f = state.packMesh.material.uniforms.uFade; f.value = Math.min(1, f.value + dt * 1.2); }
-  landmarkGroup.visible = cam.dist < 60;
+  landmarkGroup.visible = !city && cam.dist < 60;
+  if (city && photo.tiles) { camera.updateMatrixWorld(); photo.tiles.update(); if ((clock.t * 4 | 0) % 4 === 0) updateCredit(); }
   cloudShell.material.uniforms.uOn.value = lerp(cloudShell.material.uniforms.uOn.value, state.clouds, .1);
   stars.material.opacity = smooth(300, 2500, alt);
   bg.copy(bgSky).lerp(bgSpace, smooth(25, 900, alt)); renderer.setClearColor(bg);
@@ -1623,6 +1810,8 @@ function loadHeight(url) {
       loadTex('assets/region.jpg'), loadTex('assets/innsbruck.jpg'), loadHeight('assets/region-height.png'),
       fetch('assets/geo.json').then(r => r.json()),
     ]);
+    const cfg = await fetch('assets/config.json').then(r => r.ok ? r.json() : {}).catch(() => ({}));
+    photo.key = readKey() || cfg.googleMapsKey || ''; photoChip();
     const family = await fetch('assets/family.json').then(r => r.ok ? r.json() : {}).catch(() => ({}));
     HF = hm.f; terrainMat.uniforms.map.value = region; terrainMat.uniforms.ibk.value = ibk; terrainMat.uniforms.hmap.value = hm.t;
     buildTerrain(); buildSprites(); buildLandmarks(); buildJourney(geo, (family.places || []).filter(f => isFinite(f.lat) && isFinite(f.lon))); buildDots();

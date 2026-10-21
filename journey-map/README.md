@@ -37,6 +37,34 @@ the file directly from disk won't load the map data).
 - Phone layout: the camera frames the action in the space between the header
   and the card, and wide shots pull back further on narrow screens.
 
+## Photo-real cities (Google Photorealistic 3D Tiles)
+
+During the city tours (Munich, Innsbruck, Nuremberg, Neuschwanstein) and the
+major stops along the way (Kufstein, Rattenberg, the Wieskirche, family
+towns), the map can switch under a bank of cloud to Google's photo-real 3D
+city, then switch back when the camera leaves. While it shows, only Google's
+3D content is on screen, with the trip's own pins, cards and labels on top.
+
+It needs a Google Maps Platform API key:
+
+1. In the Google Cloud console, create a project, attach a billing account and
+   enable the **Map Tiles API**.
+2. Create an API key. Under *Application restrictions* choose *Websites* and
+   add `https://justcodinhere.github.io/*` (plus `http://localhost:8000/*` for
+   testing). Under *API restrictions* allow only the Map Tiles API.
+3. Optionally set a daily quota on the Map Tiles API so a surprise can't run
+   up a bill.
+4. Either paste the key into the page (the "3D cities" chip; it is saved in
+   that browser only) or put it in `assets/config.json` as `googleMapsKey` so
+   every visitor gets it. A key there is public, which is why the website
+   restriction matters.
+
+The tiles load only from a real web address such as GitHub Pages or
+`python3 -m http.server` in this folder. The Claude artifact preview blocks
+outside servers, so there the chip says it can't reach Google and the regular
+map stays. Google's attribution line replaces the usual credits while the
+tiles are on screen, as their terms require.
+
 ## Pacing and sub-steps
 
 The train or car stops at each story for as long as it takes to read (about
@@ -90,10 +118,8 @@ snapping). They expect a `data/` working folder and `rasterio`, `mgrs`,
 - Swap the code-built vehicles for Blender models: export `.glb` files and load
   them with three.js `GLTFLoader` in place of `makePlane`, `makeTrainCar` and
   `makeVan`.
-- Photo-real cities: Google's Photorealistic 3D Tiles cover Munich, Innsbruck
-  and Nuremberg with real photogrammetry (needs a Google Maps API key and its
-  attribution rules). Bavaria also publishes free LoD2 building models with
-  real roof shapes.
+- A free alternative to Google for buildings: Bavaria publishes LoD2 building
+  models with real roof shapes as open data.
 - Sharper terrain: the elevation grid is 150 m; a finer grid along the Inn
   valley and around Neuschwanstein would sharpen the ridgelines.
 - Day-of-trip details on tap (hotel, Mass times, reservations).
