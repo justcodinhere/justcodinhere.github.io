@@ -100,7 +100,13 @@
     backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 14px 40px rgba(0,0,0,.45);
     transition: opacity .4s, transform .4s; opacity: 0; transform: translateY(-6px); pointer-events: none;
   }
-  .poi.show { opacity: 1; transform: none; }
+  .poi.show { opacity: 1; transform: none; pointer-events: auto; }
+  .poi-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .poi-bar { flex: 1 1 auto; height: 3px; border-radius: 2px; background: rgba(236,232,220,.14); overflow: hidden; }
+  .poi-bar i { display: block; height: 100%; width: 100%; background: var(--gold); transform-origin: left; }
+  .poi.waiting .poi-bar i { background: rgba(236,232,220,.35); }
+  .btn.small { padding: 8px 10px; font-size: 12.5px; }
+  .btn[aria-pressed="true"] { background: rgba(221,187,108,.16); border-color: var(--gold); color: var(--gold); }
   .poi .side { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); }
   .poi strong { font-size: 16px; line-height: 1.25; text-wrap: balance; }
   .poi p { margin: 0; font-size: 13.5px; color: var(--ink); opacity: .88; }
@@ -246,6 +252,11 @@
   <span class="side" id="poiSide"></span>
   <strong id="poiTitle"></strong>
   <p id="poiText"></p>
+  <div class="poi-foot">
+    <div class="poi-bar" aria-hidden="true"><i id="poiBar"></i></div>
+    <button class="btn small" id="poiHold" aria-pressed="false" title="Keep each story up until you tap Continue">Wait for me</button>
+    <button class="btn small primary" id="poiNext">Continue &rarr;</button>
+  </div>
 </aside>
 
 <div class="ui dock" id="dock">
@@ -1199,7 +1210,6 @@ const POI = {
   schongau: { lat: 47.8125, lon: 10.8967, t: 'Schongau', x: 'A hilltop town still ringed by much of its medieval wall, with a walkway along the top.' },
   wies: { major: 1, lat: 47.6811, lon: 10.9002, t: 'Wieskirche', x: 'Worth a 10-minute detour from Steingaden: a Rococo pilgrimage church by Dominikus Zimmermann, finished in 1754 and a UNESCO World Heritage Site.' },
   forggensee: { lat: 47.6050, lon: 10.7350, t: 'Forggensee', x: 'A huge reservoir on the Lech that is lowered every winter, so in December you may see a wide, empty lakebed.' },
-  greatcircle: { at: .32, t: 'Why the route bends north', x: 'On a globe the shortest path from Chicago to Munich arcs up over Canada and the North Atlantic. Flat maps make it look like a detour.' },
   landfall: { at: .78, t: 'Landfall in Europe', x: 'Over Ireland and Britain, then across the Continent for the descent into Munich mid-morning.' },
   ohare: { at: .9, t: 'O’Hare', x: 'An 8½-hour layover. The rest of the family meets the group here for the overnight flight.' },
   heiliggeist: { lat: 48.1357, lon: 11.5770, t: 'Heilig-Geist-Kirche', x: 'Gothic bones under a Baroque skin by the Asam brothers, at the edge of the Viktualienmarkt.' },
@@ -1261,31 +1271,28 @@ function placePois(path, list) {   // distance along the path and which side eac
   }
   return out.sort((a, b) => a.s - b.s);
 }
-// About 200 words a minute, plus time to look: never less than 4 s, never more than 11 s.
-function readTime(p) { return clamp(2.5 + p.x.split(/\s+/).length / 3.2, 4, 11); }
-// Time -> distance along a leg. The vehicle travels between waypoints and stops at each one
-// for as long as its story takes to read, so a leg with many stories simply runs longer.
-function schedule(len, T0, stops) {
-  const v = len / T0, segs = [], RAMP = 1.2;
-  let t = 0, s = 0, prev = null;
-  for (const st of [...stops, null]) {
-    const s1 = st ? st.s : len, dt = Math.max(1.4, (s1 - s) / v * 1.15);
-    segs.push({ move: 1, s0: s, s1, t0: t, t1: t + dt, prev, next: st }); t += dt;
-    if (!st) break;
-    const h = readTime(st.p);
-    segs.push({ move: 0, s0: st.s, t0: t, t1: t + h, st }); t += h;
-    s = st.s; prev = st;
-  }
-  return {
-    T: t,
-    at(u) {
-      const x = u * t, g = segs.find(q => x <= q.t1) || segs[segs.length - 1];
-      if (!g.move) return { s: g.s0, st: g.st, k: 1 };
-      const l = clamp((x - g.t0) / (g.t1 - g.t0), 0, 1), e = .5 - .5 * Math.cos(Math.PI * l);
-      const kIn = g.next ? clamp(1 - (g.t1 - x) / RAMP, 0, 1) : 0, kOut = g.prev ? clamp(1 - (x - g.t0) / RAMP, 0, 1) : 0;
-      return kIn >= kOut ? { s: lerp(g.s0, g.s1, e), st: g.next, k: kIn } : { s: lerp(g.s0, g.s1, e), st: g.prev, k: kOut };
-    },
-  };
+// Time a story stays up: a relaxed reading pace (about 150 words a minute) plus time to look, 8–22 s.
+function holdTime(p) { return clamp(4 + p.x.split(/\s+/).length / 2.5, 8, 22); }
+// Show a story and wait: until its countdown runs out, or until Continue is tapped.
+// With "Wait for me" on, every story waits for the tap. onTick keeps the camera moving meanwhile.
+const story = { wait: false, skip: false };
+function storyHold(p, side, onTick) {
+  if (!state.stories || !p) return Promise.resolve(true);
+  const tok = token, T = reduceMotion ? 2 : holdTime(p), bar = $('poiBar');
+  story.skip = false; showPoi(p, side);
+  return new Promise(res => {
+    let el = 0, last = clock.t;
+    (function tick() {
+      if (tok.dead) return res(false);
+      const dt = clock.t - last; last = clock.t;
+      if (!story.wait) el += dt;
+      poiEl.classList.toggle('waiting', story.wait);
+      bar.style.transform = `scaleX(${story.wait ? 1 : (1 - clamp(el / T, 0, 1)).toFixed(4)})`;
+      onTick && onTick();
+      if (story.skip || el >= T || !state.stories) { showPoi(null); return res(true); }
+      requestAnimationFrame(tick);
+    })();
+  });
 }
 
 /* ---------- photo-real cities: Google Photorealistic 3D Tiles ---------- */
@@ -1455,12 +1462,12 @@ function buildJourney(geo, family = []) {
       routes: ['ictOrd'], run: () => flight(P.ictOrd, 'ictOrd', far(view(PL.ord.lat, PL.ord.lon, 900, 25, 60)), ps('ohare')) },
     { id: 'day1b', day: 'day1', mode: 'flight', pack: 'munich', eyebrow: 'Day 1 → 2 · UA953 overnight', title: 'Chicago → Munich',
       meta: '6:00 pm – 9:35 am Mon · 8h 35m · Boeing 787-8', note: 'All eight together across the Atlantic, landing in Munich mid-morning on the 21st.',
-      routes: ['ordMuc'], run: () => flight(P.ordMuc, 'ordMuc', view(PL.muc.lat, PL.muc.lon, 22, 58, 210), ps('greatcircle', 'landfall')) },
+      routes: ['ordMuc'], run: () => flight(P.ordMuc, 'ordMuc', view(PL.muc.lat, PL.muc.lon, 22, 58, 210), ps('landfall')) },
     { id: 'day2', mode: 'train', pack: 'munich', eyebrow: 'Day 2 · Mon, Dec 21 · S-Bahn S1 / S8', title: 'Munich Airport → Rosenheimer Platz',
       meta: '~40–45 min · stop sits right below the Hilton', note: 'Settle in, fight the jet lag, and head out to the Christmas markets for dinner.',
       routes: ['aptCity'], run: () => groundLeg(P.aptCity, 'aptCity', 'train', { pois: [...ps('hilton'), ...extra.day2], end: view(48.1310, 11.585, 3.2, 62, 300) }) },
     { id: 'day3', mode: 'stay', pack: 'munich', eyebrow: 'Day 3 · Tue, Dec 22', title: 'Munich old town',
-      meta: 'Mass at the Frauenkirche 8:30 am · Catholic walking tour', note: 'A flat 2.5 km loop through the old town. Each stop pops up in turn; press Next leg any time to move on.',
+      meta: 'Mass at the Frauenkirche 8:30 am · Catholic walking tour', note: 'A flat 2.5 km loop through the old town, one stop at a time. Tap Continue on each story to move on.',
       routes: [], tour: ps('heiliggeist', 'peter', 'marien', 'frauenMuc', 'michael', 'buergersaal', 'asam'),
       run: (s) => tour(s.tour, view(48.1375, 11.5735, 3.4, 58, 200)) },
     ...legSteps({ id: 'day4', mode: 'train', pack: 'inn', eyebrow: 'Day 4 · Wed, Dec 23 · DB / ÖBB', title: 'Munich → Innsbruck',
@@ -1494,18 +1501,22 @@ function buildJourney(geo, family = []) {
     const mid = a.clone().add(b).normalize().multiplyScalar(R);
     const fd = clamp(p.groundKm * 1.25, 1200, 11000) * fit;
     if (!await flyTo({ target: mid, dist: fd, tilt: 12, heading: 0 })) return;
-    const T = reduceMotion ? .01 : clamp(3 + p.groundKm / 1400, 4, 8.5) + pois.length * 1.8;
-    const stops = placePois(p, pois), m0 = mid.clone(), bR = b.clone().multiplyScalar(R);
-    const ok = await anim(T, t => {
-      const e = ease(t), d = e * p.len;
+    const T = reduceMotion ? .01 : clamp(3 + p.groundKm / 1400, 4, 8.5);
+    const m0 = mid.clone(), bR = b.clone().multiplyScalar(R);
+    const at = d => {
+      const e = d / p.len;
       ROUTES[key].set('uReveal', d); drawPlane(plane, p, d);
       cam.target.copy(m0).lerp(bR, e * .25).normalize().multiplyScalar(R);
-      cam.dist = fd * (1 - .12 * e); state.progress = t * .8;
-      const near = stops.find(st => Math.abs(st.s - d) < p.len * .09);
-      showPoi(near ? near.p : null, near ? near.side : '');
-    });
-    showPoi(null);
-    if (!ok) return;
+      cam.dist = fd * (1 - .12 * e); state.progress = e * .8;
+    };
+    let from = 0;
+    for (const st of [...(state.stories ? placePois(p, pois) : []), null]) {
+      const to = st ? st.s : p.len, f0 = from / p.len, f1 = to / p.len;
+      // one smooth curve over the whole flight, stopping where a story is told
+      if (!await anim(Math.max(.01, T * (f1 - f0)), t => at(p.len * ease(lerp(f0, f1, t))))) return;
+      if (st && !await storyHold(st.p, st.side, () => at(to))) return;
+      from = to;
+    }
     plane.visible = false;
     await flyTo(end); state.progress = 1;
   }
@@ -1524,34 +1535,42 @@ function buildJourney(geo, family = []) {
       draw(path, s0);
       if (!await flyTo(view(f.lat, f.lon, f.d || 2.6, 60, h0 + turn))) return false;
       if (!await enterCity(f)) return false;
-      if (!await anim(reduceMotion ? 3 : readTime(f) + 3, t => { cam.heading += .05 * clock.speed; state.progress = t * .3; })) return false;
+      if (!await storyHold(f, o.focus.side, () => { cam.heading += .05 * clock.speed; })) return false;
+      state.progress = .3;
       if (!await exitCity()) return false;
       draw(path, s0);
     }
     if (!await flyTo({ target: p0.clone(), dist: 7 * fitClose, tilt: 62, heading: h0 }, o.focus ? 2.2 : undefined)) return false;
-    const len = s1 - s0, T0 = reduceMotion ? .01 : clamp(len / 9, 3.5, 16);
-    const sch = schedule(len, T0, state.stories ? stops.map(st => ({ ...st, s: st.s - s0 })) : []);
+    const len = s1 - s0, v = len / clamp(len / 9, 3.5, 16), RAMP = 1.2;
     let hd = h0, look = 0;
     const camTarget = new V3(), base = o.focus ? .3 : 0;
-    const ok = await anim(reduceMotion ? .01 : sch.T, t => {
-      const a = sch.at(t), d = s0 + a.s, pos = draw(path, d);
+    const place = (d, k, st) => {          // put the vehicle at d km and frame it, turning toward story st by k
+      const pos = draw(path, d), f = clamp((d - s0) / len, 0, 1);
       ROUTES[key].set('uReveal', fwd ? d : path.len);
       path.at(Math.min(path.len, d + 2), _tp, _tan);
-      const nr = a, k = a.k;
       let want = headingOf(pos, _tan);
-      if (nr.st && nr.st.p.lat && k > .05) {               // turn the camera toward the waypoint
-        nr.st.p.v = nr.st.p.v || ground(nr.st.p.lat, nr.st.p.lon, .03);
-        want = lerpAngle(want, headingOf(pos, nr.st.p.v.clone().sub(pos).normalize()), .55 * k);
-        camTarget.copy(pos).lerp(nr.st.p.v, .35 * k);
+      if (st && st.p.lat && k > .05) {
+        st.p.v = st.p.v || ground(st.p.lat, st.p.lon, .03);
+        want = lerpAngle(want, headingOf(pos, st.p.v.clone().sub(pos).normalize()), .55 * k);
+        camTarget.copy(pos).lerp(st.p.v, .35 * k);
       } else camTarget.copy(pos);
       hd = lerpAngle(hd, want, .05); look = lerp(look, k, .05);
       cam.target.copy(camTarget); cam.heading = hd;
-      cam.dist = (6.5 + 9 * Math.sin(Math.PI * t) * (1 - look)) * fitClose; cam.tilt = 64 - 6 * Math.sin(Math.PI * t);
-      showPoi(k > .35 && nr.st ? nr.st.p : null, nr.st ? nr.st.side : '');
-      state.progress = base + t * ((o.roundTrip && last) ? .45 : .85) * (1 - base);
-    });
-    showPoi(null);
-    if (!ok) return false;
+      cam.dist = (6.5 + 9 * Math.sin(Math.PI * f) * (1 - look)) * fitClose; cam.tilt = 64 - 6 * Math.sin(Math.PI * f);
+      state.progress = base + f * ((o.roundTrip && last) ? .45 : .85) * (1 - base);
+    };
+    let from = s0, prev = null;
+    for (const st of [...(state.stories ? stops : []), null]) {
+      const to = st ? st.s : s1, pv = prev, dur = reduceMotion ? .01 : Math.max(1.4, (to - from) / v * 1.15), a = from;
+      const ok = await anim(dur, t => {
+        const x = t * dur, kIn = st ? clamp(1 - (dur - x) / RAMP, 0, 1) : 0, kOut = pv ? clamp(1 - x / RAMP, 0, 1) : 0;
+        place(lerp(a, to, .5 - .5 * Math.cos(Math.PI * t)), Math.max(kIn, kOut), kIn >= kOut ? st : pv);
+      });
+      if (!ok) return false;
+      if (!st) break;
+      if (!await storyHold(st.p, st.side, () => place(to, 1, st))) return false;
+      from = to; prev = st;
+    }
     if (!last) return true;               // the next sub-step picks up from here
     if (o.roundTrip) {
       if (!await tour(o.tour, o.stop, 0, true)) return false;
@@ -1578,7 +1597,7 @@ function buildJourney(geo, family = []) {
       const part = i ? {
         id: `${step.id}-${focus.p.t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`, sub: i, mode: step.mode, pack: step.pack,
         eyebrow: `${step.eyebrow.split(' · ')[0]}.${i} · ${focus.p.family ? 'Family history' : 'Along the way'} · ${focus.side.toLowerCase()}`,
-        title: focus.p.t, meta: `${step.title} · about ${Math.round(focus.s)} km in`, note: focus.p.x, routes: step.routes, family: focus.p.family,
+        title: focus.p.t, meta: `${step.title} · about ${Math.round(focus.s)} km in`, note: 'A stop along the way. The story is in the card above; tap Continue when you\u2019re ready.', routes: step.routes, family: focus.p.family,
       } : { ...step };
       part.chain = i < cuts.length - 2;
       part.routeFrom = c;
@@ -1614,8 +1633,8 @@ async function tour(stops, base, rate = 1, partOfLeg = false) {
   for (let i = 0; i < stops.length; i++) {
     const p = stops[i];
     if (!await flyTo(view(p.lat, p.lon, p.d || 1.1, 60, (cam.heading + 35) % 360), 2)) return false;
-    showPoi(p, `Stop ${i + 1} of ${stops.length}`);
-    if (!await anim(reduceMotion ? 3 : 5.5, t => { cam.heading += .06 * clock.speed; state.progress = (i + t) / stops.length * (partOfLeg ? .15 : 1) + (partOfLeg ? .45 : 0); })) return false;
+    state.progress = (i + 1) / stops.length * (partOfLeg ? .15 : 1) + (partOfLeg ? .45 : 0);
+    if (!await storyHold(p, `Stop ${i + 1} of ${stops.length}`, () => { cam.heading += .06 * clock.speed; })) return false;
   }
   showPoi(null);
   if (!await flyTo(rg(base), 2)) return false;
@@ -1683,9 +1702,15 @@ addEventListener('hashchange', () => {
 $('next').onclick = () => go(state.step + 1);
 $('prev').onclick = () => go(state.step - 1);
 $('pause').onclick = () => setPaused(clock.speed !== 0);
+$('poiNext').onclick = () => { story.skip = true; };
+function readWait() { try { return localStorage.getItem('storyWait') === '1'; } catch (e) { return false; } }
+function setWait(w) { story.wait = w; $('poiHold').setAttribute('aria-pressed', w ? 'true' : 'false'); try { localStorage.setItem('storyWait', w ? '1' : '0'); } catch (e) {} }
+$('poiHold').onclick = () => setWait(!story.wait);
+setWait(readWait());
 addEventListener('keydown', e => {
   if (e.target.closest && e.target.closest('button') && (e.key === ' ' || e.key === 'Enter')) return;
-  if (e.key === 'ArrowRight') go(state.step + 1); else if (e.key === 'ArrowLeft') go(state.step - 1);
+  if ((e.key === 'ArrowRight' || e.key === 'Enter') && poiShown) story.skip = true;
+  else if (e.key === 'ArrowRight') go(state.step + 1); else if (e.key === 'ArrowLeft') go(state.step - 1);
   else if (e.key === ' ') { e.preventDefault(); setPaused(clock.speed !== 0); }
 });
 function toggle(btn, key, after) {

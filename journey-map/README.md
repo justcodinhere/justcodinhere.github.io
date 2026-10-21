@@ -67,8 +67,10 @@ tiles are on screen, as their terms require.
 
 ## Pacing and sub-steps
 
-The train or car stops at each story for as long as it takes to read (about
-200 words a minute, 4–11 seconds), so legs with more stories run longer.
+The train or car stops at each story. A bar on the story card counts down a
+relaxed reading time (8–22 seconds by length); Continue moves on early, and
+"Wait for me" keeps every story up until Continue is tapped (remembered in that
+browser). Legs with more stories simply run longer.
 Bigger sights get their own numbered sub-step that the leg runs straight
 into: 4.1 Kufstein Fortress, 4.2 Rattenberg, 9.1 the Wieskirche. To promote any
 other story to a sub-step, add `major: 1` to it in the `POI` list in
