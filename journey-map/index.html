@@ -382,7 +382,7 @@ vec3 winterLight(vec3 n, vec3 up, vec3 L){
 const HAZE = `
 vec3 applyHaze(vec3 col, float dist, float alt){
   float fd=90.+alt*4.;
-  return mix(col,vec3(.64,.73,.86),(1.-exp(-dist/fd))*.6*(1.-smoothstep(600.,2500.,alt)));
+  return mix(col,vec3(.64,.73,.86),(1.-exp(-dist/fd))*.42*(1.-smoothstep(600.,2500.,alt)));
 }`;
 
 /* ---------- globe ---------- */
@@ -460,7 +460,7 @@ let stars;
 const terrainMat = new THREE.ShaderMaterial({
   uniforms: {
     ...uni, map: { value: null }, ibk: { value: null }, earth: { value: null }, hmap: { value: null },
-    det: { value: null }, detIdx: { value: null }, detRel: { value: null }, uDetAtlas: { value: new THREE.Vector2(32, 1) }, uDetOn: { value: 0 },
+    det: { value: null }, detIdx: { value: null }, detRel: { value: null }, detMid: { value: null }, uMidAtlas: { value: new THREE.Vector2(64, 1) }, uDetAtlas: { value: new THREE.Vector2(32, 1) }, uDetOn: { value: 0 },
     uBB: { value: new THREE.Vector4(BB.W, BB.E, BB.S, BB.N) }, uIB: { value: new THREE.Vector4(IB.W, IB.E, IB.S, IB.N) },
     uTexel: { value: new THREE.Vector2(1 / HW, 1 / HH) },
   },
@@ -473,11 +473,11 @@ const terrainMat = new THREE.ShaderMaterial({
       vPos=(modelMatrix*vec4(p,1.)).xyz; gl_Position=projectionMatrix*viewMatrix*vec4(vPos,1.);
     }`,
   fragmentShader: NOISE + LATLON + HAZE + LIGHT + `
-    uniform sampler2D map, ibk, earth, hmap, det, detIdx, detRel; uniform vec4 uBB, uIB; uniform vec3 uSun, uRegionSun; uniform vec2 uTexel, uDetAtlas;
+    uniform sampler2D map, ibk, earth, hmap, det, detIdx, detRel, detMid; uniform vec4 uBB, uIB; uniform vec3 uSun, uRegionSun; uniform vec2 uTexel, uDetAtlas, uMidAtlas;
     uniform float uAlt, uSnowLine, uFrost, uWinter, uDetOn;
     varying vec2 vUv; varying vec3 vPos; varying float vH;
     const vec2 GRID=vec2(${GRID[0]}.,${GRID[1]}.);
-    float hasCell(vec2 c){ return texture2D(detIdx,(c+.5)/GRID).b; }
+    float hasCell(vec2 c){ return step(.3,texture2D(detIdx,(c+.5)/GRID).b); }   // 10 m (B=255) or 20 m (B=128) cell
     void main(){
       vec2 ll=latlon(vPos); float lat=ll.x*180./PI, lon=ll.y*180./PI;
       vec3 up=normalize(vPos), east=normalize(vec3(up.z,0.,-up.x)), north=cross(up,east);
@@ -487,33 +487,34 @@ const terrainMat = new THREE.ShaderMaterial({
       vec3 ne=normalize(vec3(-(hR-hL)/dx*${EXAG.toFixed(2)}, -(hU-hD)/dy*${EXAG.toFixed(2)}, 1.));
       float dist=length(cameraPosition-vPos);
       // detail cell (10 m imagery + 27 m relief) under this fragment, feathered where the corridor ends
-      float detW=0.; vec2 dLi=vec2(0.), dSlot=vec2(0.);
+      float detW=0., relW=0., hi=0.; vec2 dLi=vec2(0.), dSlot=vec2(0.);
       if(uDetOn>.01 && dist<70.){
         vec2 cf=vUv*GRID, c=floor(cf); vec4 ix=texture2D(detIdx,(c+.5)/GRID);
-        if(ix.b>.5){
+        if(ix.b>.3){
+          hi=step(.75,ix.b);
           vec2 l=fract(cf); float w=1.;
           if(hasCell(c+vec2(-1.,0.))<.5) w*=smoothstep(0.,.45,l.x);
           if(hasCell(c+vec2(1.,0.))<.5) w*=smoothstep(0.,.45,1.-l.x);
           if(hasCell(c+vec2(0.,-1.))<.5) w*=smoothstep(0.,.45,l.y);
           if(hasCell(c+vec2(0.,1.))<.5) w*=smoothstep(0.,.45,1.-l.y);
           dLi=l; dSlot=floor(ix.rg*255.+.5);
-          detW=w*uDetOn*(1.-smoothstep(30.,65.,dist));
+          detW=w*uDetOn*(1.-smoothstep(30.,65.,dist)); relW=detW*hi;
         }
       }
       float fineH=0.;
-      if(detW>0.){
+      if(relW>0.){
         vec2 li=dLi*(46./48.)+1./48.;
         vec3 rl=texture2D(detRel,vec2((dSlot.x+li.x)/uDetAtlas.x, 1.-(dSlot.y+1.-li.y)/uDetAtlas.y)).rgb;
         vec2 nxy=rl.rg*2.-1.;
         vec3 nd=vec3(nxy, sqrt(max(.02,1.-dot(nxy,nxy))));
-        ne=normalize(mix(ne,nd,detW)); fineH=(rl.b-.5)*510.*detW;
+        ne=normalize(mix(ne,nd,relW)); fineH=(rl.b-.5)*510.*relW;
       }
       // close up, add fine relief that the 150 m elevation grid can't carry: gullies, ribs and drifts
       float steep=1.-ne.z, near=1.-smoothstep(6.,30.,dist);
       if(near>0.){
         vec3 q=vec3(vUv*vec2(5200.,7800.),0.), e1=vec3(.35,0.,0.), e2=vec3(0.,.35,0.);
         float n0=vnoise(q)+.5*vnoise(q*2.1), nx=vnoise(q+e1)+.5*vnoise((q+e1)*2.1), ny=vnoise(q+e2)+.5*vnoise((q+e2)*2.1);
-        float amp=(.2+1.6*smoothstep(.05,.45,steep)*smoothstep(500.,1100.,vH))*near*(1.-.75*detW);
+        float amp=(.2+1.6*smoothstep(.05,.45,steep)*smoothstep(500.,1100.,vH))*near*(1.-.75*relW);
         ne=normalize(ne+vec3(-(nx-n0),-(ny-n0),0.)*amp*2.6);
       }
       vec3 N=normalize(east*ne.x+north*ne.y+up*ne.z);
@@ -527,23 +528,26 @@ const terrainMat = new THREE.ShaderMaterial({
         base=mix(base,texture2D(ibk,iuv).rgb,w);
       }
       if(detW>0.){
-        vec2 li=dLi*(126./128.)+1./128.;
-        base=mix(base,texture2D(det,vec2((dSlot.x+li.x)/uDetAtlas.x, 1.-(dSlot.y+1.-li.y)/uDetAtlas.y)).rgb,detW);
+        vec3 dc;
+        if(hi>.5){ vec2 li=dLi*(126./128.)+1./128.; dc=texture2D(det,vec2((dSlot.x+li.x)/uDetAtlas.x, 1.-(dSlot.y+1.-li.y)/uDetAtlas.y)).rgb; }
+        else { vec2 li=dLi*(62./64.)+1./64.; dc=texture2D(detMid,vec2((dSlot.x+li.x)/uMidAtlas.x, 1.-(dSlot.y+1.-li.y)/uMidAtlas.y)).rgb; }
+        base=mix(base,dc,detW);
       }
       base*=1.5;
       float lum=dot(base,vec3(.2126,.7152,.0722));
-      base=mix(base,mix(vec3(lum),base,.62)*vec3(1.,.97,.95),uWinter);
+      base=pow(base,vec3(1.08));
+      base=mix(base,mix(vec3(lum),base,.88)*vec3(.98,.99,1.02),uWinter);
 
       float nz=vnoise(vec3(vUv*vec2(300.,450.),1.))*.6+vnoise(vec3(vUv*vec2(1100.,1650.),2.))*.4;
       float nz2=vnoise(vec3(vUv*vec2(4200.,6300.),3.));
-      float line=uSnowLine+(nz-.5)*520.;
+      float line=uSnowLine+(nz-.5)*380.;
       float s=smoothstep(line-260.,line+260.,vH+fineH);
       s*=mix(.22,1.,smoothstep(.6,.86,ne.z));
       float forest=1.-smoothstep(.035,.09,lum);
       s*=mix(1.,.28,forest*(1.-smoothstep(1650.,2050.,vH)));
-      s=max(s,uFrost*(.35+.65*nz)*(1.-forest*.75)*smoothstep(.6,.9,ne.z));
+      s=max(s,uFrost*.45*(1.-forest)*smoothstep(.75,.95,ne.z));
       // close up, break the snow into drifts and let tree crowns show through
-      s*=mix(1.,.8+.4*nz2,detW*(1.-smoothstep(4.,18.,dist)));
+      s*=mix(1.,.8+.4*nz2,relW*(1.-smoothstep(4.,18.,dist)));
       s=clamp(s,0.,1.)*uWinter;
 
       vec3 gcol=base*(.74+.36*dif);
@@ -958,29 +962,30 @@ function buildLandmarks() {
 /* ---------- detail packs: 10 m imagery + buildings per leg, swapped behind the clouds ---------- */
 const packs = {}; let activePack = null;
 async function loadPack(name) {
-  const [atlas, idx, meta, relief] = await Promise.all([
+  const [atlas, idx, meta, relief, mid] = await Promise.all([
     loadTex(`assets/packs/${name}.jpg`), loadTex(`assets/packs/${name}-index.png`, false),
     fetch(`assets/packs/${name}.json`).then(r => r.json()), loadTex(`assets/packs/${name}-relief.jpg`, false),
+    loadTex(`assets/packs/${name}-mid.jpg`),
   ]);
   const bin = atob(meta.data), buf = new Uint8Array(bin.length);       // building footprints, little-endian uint16s
   for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
   idx.flipY = false; idx.magFilter = idx.minFilter = THREE.NearestFilter; idx.generateMipmaps = false; idx.needsUpdate = true;
   const mesh = await buildBuildings(buf.buffer, meta), trees = meta.trees ? await buildTrees(meta.trees) : null;
-  return { atlas, idx, relief, rows: atlas.image.height / 128, mesh, trees };
+  return { atlas, idx, relief, mid, rows: atlas.image.height / 128, midRows: mid.image.height / 64, mesh, trees };
 }
 async function usePack(name) {
   if (!name || activePack === name) return;
   activePack = name;
   for (const [k, p] of Object.entries(packs)) {          // keep GPU memory low: drop other packs
     if (k === name) continue;
-    p.then(d => { d.atlas.dispose(); d.idx.dispose(); d.relief.dispose(); d.mesh.geometry.dispose(); scene.remove(d.mesh); if (d.trees) { d.trees.children.forEach(t => t.dispose()); scene.remove(d.trees); } }).catch(() => {});
+    p.then(d => { d.atlas.dispose(); d.idx.dispose(); d.relief.dispose(); d.mid.dispose(); d.mesh.geometry.dispose(); scene.remove(d.mesh); if (d.trees) { d.trees.children.forEach(t => t.dispose()); scene.remove(d.trees); } }).catch(() => {});
     delete packs[k];
   }
   packs[name] = packs[name] || loadPack(name);
   let d; try { d = await packs[name]; } catch (e) { console.warn('detail pack failed', name, e); return; }
   if (activePack !== name) return;
   const u = terrainMat.uniforms;
-  u.det.value = d.atlas; u.detIdx.value = d.idx; u.detRel.value = d.relief; u.uDetAtlas.value.set(32, d.rows); u.uDetOn.value = 0;
+  u.det.value = d.atlas; u.detIdx.value = d.idx; u.detRel.value = d.relief; u.detMid.value = d.mid; u.uMidAtlas.value.set(64, d.midRows); u.uDetAtlas.value.set(32, d.rows); u.uDetOn.value = 0;
   if (!d.mesh.parent) scene.add(d.mesh);
   if (d.trees && !d.trees.parent) scene.add(d.trees);
   state.trees = d.trees;
@@ -1221,7 +1226,7 @@ function updateSprites(dt, alt) {
     llv(u.lat, u.lon, u.h, s.position);
     const d = camera.position.distanceTo(s.position);
     if (u.border) { s.material.opacity = u.base * state.clouds * smooth(70, 160, alt) * (1 - smooth(900, 1800, alt)); continue; }
-    s.material.opacity = u.base * .7 * state.clouds * smooth(u.size * 1.2, u.size * 4, d) * (1 - smooth(250, 700, alt));
+    s.material.opacity = u.base * .7 * state.clouds * smooth(u.size * 1.2, u.size * 4, d) * smooth(14, 30, alt) * (1 - smooth(250, 700, alt));
   }
 }
 const veilScene = new THREE.Scene(), veilCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -1978,7 +1983,7 @@ function frame(now) {
   if (state.packMesh) { const f = state.packMesh.material.uniforms.uFade; f.value = Math.min(1, f.value + dt * 1.2); }
   landmarkGroup.visible = !city && cam.dist < 60;
   updateTrees(state.trees);
-  if (alt < 2500 && !city) { scene.fog = sceneFog; sceneFog.density = .75 / (90 + alt * 4); } else scene.fog = null;
+  if (alt < 2500 && !city) { scene.fog = sceneFog; sceneFog.density = .55 / (90 + alt * 4); } else scene.fog = null;
   if (city && photo.tiles) { camera.updateMatrixWorld(); photo.tiles.update(); if ((clock.t * 4 | 0) % 4 === 0) updateCredit(); }
   cloudShell.material.uniforms.uOn.value = lerp(cloudShell.material.uniforms.uOn.value, state.clouds, .1);
   if (!city) { cloudShell.visible = alt > 200; atmo.visible = alt > 120; globe.visible = alt > 60 || !inPatch(); }

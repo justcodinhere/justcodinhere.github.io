@@ -28,6 +28,8 @@ the file directly from disk won't load the map data).
   The "Stories" chip turns them off; the pause button freezes any leg.
 - Detail near the routes: 10 m/pixel Sentinel-2 imagery along every rail and
   road corridor and around each stop, loaded one leg at a time (`assets/packs`).
+  A second band of 20 m imagery reaches about 6 km either side of each route,
+  so everything in view during a leg is sharp.
 - 3D buildings for every town the routes pass and the stop cities (Overture
   Maps / OpenStreetMap footprints and heights). Roofs follow the real shape
   where it is tagged (gabled, hipped, pyramid, dome, onion, spire) and a
