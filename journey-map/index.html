@@ -1,0 +1,1083 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Searl Christmas Journey</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Mountains+of+Christmas:wght@700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  /* Layout: full-bleed 3D map; a journey card docks to the bottom, brand top-left, layer toggles top-right.
+     Single deliberate night-sky look (the map is always dark), palette borrowed from the itinerary's dark theme. */
+  :root {
+    --night: #070D10;
+    --glass: rgba(14, 23, 18, 0.80);
+    --glass-line: rgba(221, 187, 108, 0.22);
+    --ink: #ECE8DC;
+    --muted: #A7A08D;
+    --gold: #DDBB6C;
+    --red: #E2677A;
+    --pine: #79C596;
+    --river: #7FD1C8;
+    --font-fest: "Mountains of Christmas", Georgia, serif;
+    --font-body: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body {
+    margin: 0; overflow: hidden; background: var(--night); color: var(--ink);
+    font-family: var(--font-body); font-size: 15px; line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  #stage canvas:active { cursor: grabbing; }
+  #snow { position: fixed; inset: 0; pointer-events: none; }
+  #labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+  .lbl {
+    position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 6px;
+    font-size: 12.5px; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap;
+    color: var(--ink); text-shadow: 0 1px 3px rgba(0,0,0,.9), 0 0 10px rgba(0,0,0,.6);
+    transition: opacity .35s; will-change: transform;
+  }
+  .lbl::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--gold); box-shadow: 0 0 0 2px rgba(7,13,16,.75);
+  }
+  .lbl.flip { flex-direction: row-reverse; }
+  .lbl.minor { font-weight: 400; font-size: 11.5px; color: var(--muted); }
+  .lbl.minor::before { width: 5px; height: 5px; background: var(--ink); }
+
+  .ui { position: fixed; z-index: 5; }
+  .brand {
+    top: calc(env(safe-area-inset-top, 0px) + 14px);
+    left: max(16px, env(safe-area-inset-left, 0px));
+    pointer-events: none;
+  }
+  .brand h1 {
+    margin: 0; font-family: var(--font-fest); font-weight: 700; font-size: clamp(26px, 4.4vw, 40px);
+    line-height: 1; color: var(--ink); text-shadow: 0 2px 14px rgba(0,0,0,.7);
+  }
+  .brand p {
+    margin: 4px 0 0; font-family: var(--font-mono); font-size: 11.5px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--gold); text-shadow: 0 1px 6px rgba(0,0,0,.8);
+  }
+  .layers {
+    top: calc(env(safe-area-inset-top, 0px) + 14px);
+    right: max(16px, env(safe-area-inset-right, 0px));
+    display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 46vw;
+  }
+  .chip {
+    font: 600 12.5px/1 var(--font-body); color: var(--muted); background: var(--glass);
+    border: 1px solid var(--glass-line); border-radius: 999px; padding: 8px 12px; cursor: pointer;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .chip[aria-pressed="true"] { color: var(--night); background: var(--gold); border-color: var(--gold); }
+  .chip:focus-visible, .btn:focus-visible, .dot:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .dock {
+    left: 0; right: 0; bottom: 0;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+    display: flex; justify-content: center; pointer-events: none;
+  }
+  .card {
+    pointer-events: auto; width: 100%; max-width: 580px; background: var(--glass);
+    border: 1px solid var(--glass-line); border-radius: 16px; padding: 14px 16px 12px;
+    backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    box-shadow: 0 18px 50px rgba(0,0,0,.45); display: grid; gap: 10px;
+  }
+  .card-head { display: flex; gap: 12px; align-items: flex-start; }
+  .mode {
+    flex: 0 0 auto; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
+    background: rgba(221,187,108,.12); color: var(--gold);
+  }
+  .mode[data-mode="train"] { background: rgba(226,103,122,.14); color: var(--red); }
+  .mode[data-mode="car"] { background: rgba(121,197,150,.14); color: var(--pine); }
+  .mode[data-mode="stay"] { background: rgba(236,232,220,.09); color: var(--ink); }
+  .mode svg { width: 24px; height: 24px; }
+  .txt { min-width: 0; display: grid; gap: 2px; }
+  .eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); }
+  .title { margin: 0; font-size: 19px; font-weight: 700; line-height: 1.2; text-wrap: balance; }
+  .meta { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .note { margin: 0; font-size: 14px; color: var(--ink); opacity: .86; max-width: 62ch; }
+  .bar { height: 3px; border-radius: 2px; background: rgba(236,232,220,.12); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--gold); }
+  .controls { display: flex; align-items: center; gap: 8px; }
+  .dots { display: flex; gap: 5px; flex: 1 1 auto; min-width: 0; flex-wrap: wrap; }
+  .dot {
+    width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--glass-line); background: transparent;
+    color: var(--muted); font: 500 10.5px/1 var(--font-mono); cursor: pointer; padding: 0;
+  }
+  .dot.done { background: rgba(221,187,108,.14); color: var(--ink); }
+  .dot[aria-current="step"] { background: var(--gold); color: var(--night); border-color: var(--gold); }
+  .btn {
+    white-space: nowrap;
+    font: 700 13.5px/1 var(--font-body); border-radius: 10px; padding: 10px 14px; cursor: pointer;
+    border: 1px solid var(--glass-line); background: transparent; color: var(--ink);
+  }
+  .btn.primary { background: var(--gold); color: var(--night); border-color: var(--gold); }
+  .btn:disabled { opacity: .35; cursor: default; }
+
+  #loading {
+    position: fixed; inset: 0; z-index: 9; display: grid; place-items: center; background: var(--night);
+    transition: opacity .8s;
+  }
+  #loading div { text-align: center; display: grid; gap: 8px; }
+  #loading strong { font-family: var(--font-fest); font-size: 34px; }
+  #loading span { font-family: var(--font-mono); font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+  #loading.gone { opacity: 0; pointer-events: none; }
+
+  .credit {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 2px); right: max(8px, env(safe-area-inset-right, 0px));
+    font-size: 9.5px; color: rgba(236,232,220,.42); pointer-events: none;
+  }
+  @media (max-width: 560px) {
+    .title { font-size: 17px; }
+    .note { font-size: 13.5px; }
+    .layers { max-width: 34vw; flex-direction: column; align-items: flex-end; }
+    .brand { max-width: calc(100vw - 150px); }
+    .brand h1 { font-size: 26px; }
+    .chip { padding: 7px 10px; font-size: 12px; }
+    .credit { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div id="stage"></div>
+<canvas id="snow"></canvas>
+<div id="labels"></div>
+
+<header class="ui brand">
+  <h1>Searl Family Christmas</h1>
+  <p>Journey &middot; Dec 20&ndash;29, 2026</p>
+</header>
+
+<div class="ui layers" role="group" aria-label="Map layers">
+  <button class="chip" id="tWinter" aria-pressed="true">Winter snow</button>
+  <button class="chip" id="tClouds" aria-pressed="true">Clouds</button>
+</div>
+
+<div class="ui dock">
+  <section class="card" aria-live="polite">
+    <div class="card-head">
+      <div class="mode" id="mode"></div>
+      <div class="txt">
+        <span class="eyebrow" id="eyebrow"></span>
+        <h2 class="title" id="title"></h2>
+        <span class="meta" id="meta"></span>
+      </div>
+    </div>
+    <p class="note" id="note"></p>
+    <div class="bar"><i id="prog"></i></div>
+    <div class="controls">
+      <div class="dots" id="dots"></div>
+      <button class="btn" id="prev" aria-label="Previous leg">&larr;</button>
+      <button class="btn primary" id="next">Next leg &rarr;</button>
+    </div>
+  </section>
+</div>
+<div class="ui credit">Imagery: Copernicus Sentinel-2 &middot; Elevation: Mapzen/AWS Terrain Tiles &middot; Globe: NASA Blue Marble &middot; Lines: Natural Earth</div>
+
+<div id="loading"><div><strong>Packing the sleigh&hellip;</strong><span id="loadmsg">Loading globe</span></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script>
+(() => {
+'use strict';
+const V3 = THREE.Vector3;
+const R = 6371;                     // world units are kilometres
+const D2R = Math.PI / 180;
+const EXAG = 1.6;                   // vertical exaggeration for the Alps
+const BB = { W: 9.9, E: 12.5, S: 46.9, N: 49.7 };          // detailed terrain patch
+const IB = { W: 11.0, E: 11.8, S: 47.15, N: 47.45 };       // high-res Innsbruck inset
+const HW = 1280, HH = 1920;                                // height grid size
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- geo helpers ---------- */
+function llv(lat, lon, h = 0, o = new V3()) {
+  const p = lat * D2R, l = lon * D2R, r = R + h, c = Math.cos(p);
+  return o.set(r * c * Math.sin(l), r * Math.sin(p), r * c * Math.cos(l));
+}
+function enu(v) {
+  const up = v.clone().normalize();
+  const east = new V3(up.z, 0, -up.x).normalize();
+  const north = new V3().crossVectors(up, east);
+  return { up, east, north };
+}
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+function lerpAngle(a, b, t) { let d = ((b - a + 540) % 360) - 180; return a + d * t; }
+
+/* ---------- height field (filled after load) ---------- */
+let HF = null;
+function edgeFade(u, v) { return smooth(0, 0.03, Math.min(u, 1 - u, v, 1 - v)); }
+function heightM(lat, lon) {
+  const u = (lon - BB.W) / (BB.E - BB.W), v = (lat - BB.S) / (BB.N - BB.S);
+  if (!HF || u <= 0 || u >= 1 || v <= 0 || v >= 1) return 0;
+  const x = u * HW - .5, y = v * HH - .5, x0 = clamp(Math.floor(x), 0, HW - 2), y0 = clamp(Math.floor(y), 0, HH - 2);
+  const fx = clamp(x - x0, 0, 1), fy = clamp(y - y0, 0, 1), i = y0 * HW + x0;
+  return lerp(lerp(HF[i], HF[i + 1], fx), lerp(HF[i + HW], HF[i + HW + 1], fx), fy);
+}
+function terrainKm(lat, lon) {
+  const u = (lon - BB.W) / (BB.E - BB.W), v = (lat - BB.S) / (BB.N - BB.S);
+  if (u <= 0 || u >= 1 || v <= 0 || v >= 1) return 0;
+  return heightM(lat, lon) / 1000 * EXAG * edgeFade(u, v) + 0.002;
+}
+function ground(lat, lon, lift = 0) { return llv(lat, lon, terrainKm(lat, lon) + lift); }
+
+/* ---------- renderer / scene ---------- */
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.autoClear = false;
+stage.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 1, 1e5);
+scene.add(camera);
+const uni = {
+  uTime: { value: 0 }, uSun: { value: new V3(1, 0, 0) }, uAlt: { value: 10000 },
+  uRes: { value: new THREE.Vector2(1, 1) }, uFocal: { value: 1 },
+  uSnowLine: { value: 1300 }, uFrost: { value: 0.15 }, uWinter: { value: 1 },
+};
+
+/* ---------- GLSL bits ---------- */
+const NOISE = `
+float hash(vec3 p){ p=fract(p*0.3183099+.1); p*=17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
+float vnoise(vec3 x){ vec3 i=floor(x), f=fract(x); f=f*f*(3.-2.*f);
+  return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
+             mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z); }
+float fbm(vec3 p){ float a=.5, s=0.; for(int i=0;i<5;i++){ s+=a*vnoise(p); p=p*2.03+vec3(1.7,9.2,3.1); a*=.5; } return s; }
+`;
+const LATLON = `
+const float PI=3.14159265;
+vec2 latlon(vec3 p){ vec3 n=normalize(p); return vec2(asin(n.y), atan(n.x,n.z)); }
+`;
+
+/* ---------- globe ---------- */
+const tex = {};
+const globeMat = new THREE.ShaderMaterial({
+  uniforms: { ...uni, map: { value: null }, uRegionSun: { value: new V3(0, 1, 0) }, uBB: { value: new THREE.Vector4(BB.W, BB.E, BB.S, BB.N) } },
+  vertexShader: `varying vec3 vPos; void main(){ vPos=(modelMatrix*vec4(position,1.)).xyz; gl_Position=projectionMatrix*viewMatrix*vec4(vPos,1.); }`,
+  fragmentShader: LATLON + `
+    uniform sampler2D map; uniform vec3 uSun, uRegionSun; uniform vec4 uBB; uniform float uWinter, uAlt; varying vec3 vPos;
+    void main(){
+      vec2 ll=latlon(vPos); float lat=ll.x*180./PI, lon=ll.y*180./PI;
+      if(lon>uBB.x+.004 && lon<uBB.y-.004 && lat>uBB.z+.004 && lat<uBB.w-.004) discard;
+      vec3 c=texture2D(map, vec2(ll.y/(2.*PI)+.5, ll.x/PI+.5)).rgb;
+      float land=step(c.b*1.1, max(c.r,c.g));
+      float snow=uWinter*land*smoothstep(58.,68.,abs(lat))*smoothstep(.12,.3,c.r);
+      c=mix(c, vec3(.86,.9,.95), snow*.8);
+      float cl=dot(c,vec3(.2126,.7152,.0722)); c=mix(c,mix(vec3(cl),c,.62)*vec3(1.,.97,.95),uWinter*land);
+      vec3 L=normalize(mix(uRegionSun,normalize(uSun),smoothstep(400.,2500.,uAlt)));
+      vec3 n=normalize(vPos); float d=max(dot(n,L),0.);
+      vec3 col=c*(.18+1.05*d);
+      vec3 v=normalize(cameraPosition-vPos); vec3 h=normalize(v+L);
+      col+= (1.-land)*vec3(.5,.6,.75)*pow(max(dot(n,h),0.),220.)*.18;
+      float fd=90.+uAlt*4.;
+      col=mix(col,vec3(.64,.73,.86),(1.-exp(-length(cameraPosition-vPos)/fd))*.6*(1.-smoothstep(600.,2500.,uAlt)));
+      gl_FragColor=vec4(col,1.); gl_FragColor=linearToOutputTexel(gl_FragColor);
+    }`,
+});
+const globe = new THREE.Mesh(new THREE.SphereGeometry(R, 256, 128), globeMat);
+scene.add(globe);
+
+const atmo = new THREE.Mesh(new THREE.SphereGeometry(R * 1.022, 128, 64), new THREE.ShaderMaterial({
+  uniforms: uni, side: THREE.BackSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: `varying vec3 vN; varying vec3 vP; void main(){ vN=normalize(normalMatrix*normal); vec4 p=modelViewMatrix*vec4(position,1.); vP=p.xyz; gl_Position=projectionMatrix*p; }`,
+  fragmentShader: `uniform float uAlt; varying vec3 vN; varying vec3 vP;
+    void main(){ float i=pow(clamp(.72+dot(vN,normalize(vP)),0.,1.),4.);
+      float f=smoothstep(150.,1500.,uAlt);
+      gl_FragColor=vec4(vec3(.35,.6,1.)*i*1.6*f,1.); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
+}));
+scene.add(atmo);
+
+const cloudShell = new THREE.Mesh(new THREE.SphereGeometry(R + 9, 192, 96), new THREE.ShaderMaterial({
+  uniforms: { ...uni, uOn: { value: 1 } }, transparent: true, depthWrite: false,
+  vertexShader: `varying vec3 vPos; void main(){ vPos=(modelMatrix*vec4(position,1.)).xyz; gl_Position=projectionMatrix*viewMatrix*vec4(vPos,1.); }`,
+  fragmentShader: NOISE + LATLON + `uniform float uTime,uAlt,uOn; uniform vec3 uSun; varying vec3 vPos;
+    void main(){
+      vec3 n=normalize(vPos); vec2 ll=latlon(vPos);
+      vec3 q=n*5.+vec3(uTime*.004,0.,uTime*.002);
+      float w=fbm(q*1.0+fbm(q*2.)*1.2);
+      float band=.55+.25*sin(ll.x*3.);
+      // keep the sky over Bavaria & Tyrol fairly clear for the show
+      vec2 d=vec2((ll.y*180./PI-11.2)*.67,(ll.x*180./PI-48.2));
+      float clear=smoothstep(2.5,7.,length(d));
+      float a=smoothstep(.5,.78,w*band+.18)*(.25+.75*clear);
+      a*=smoothstep(250.,900.,uAlt)*uOn;
+      float lit=.35+.75*max(dot(n,normalize(uSun)),0.);
+      gl_FragColor=vec4(vec3(1.)*lit,a*.85); gl_FragColor=linearToOutputTexel(gl_FragColor);
+    }`,
+}));
+scene.add(cloudShell);
+
+// stars
+{
+  const g = new THREE.BufferGeometry(), n = 2500, p = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { const v = new V3().randomDirection().multiplyScalar(60000); p.set([v.x, v.y, v.z], i * 3); }
+  g.setAttribute('position', new THREE.BufferAttribute(p, 3));
+  var stars = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xcfd8ff, size: 1.6, sizeAttenuation: false, transparent: true, depthWrite: false }));
+  stars.frustumCulled = false; scene.add(stars);
+}
+
+/* ---------- regional terrain ---------- */
+const terrainMat = new THREE.ShaderMaterial({
+  uniforms: {
+    ...uni, map: { value: null }, ibk: { value: null }, earth: { value: null }, hmap: { value: null },
+    uBB: { value: new THREE.Vector4(BB.W, BB.E, BB.S, BB.N) }, uIB: { value: new THREE.Vector4(IB.W, IB.E, IB.S, IB.N) },
+    uRegionSun: { value: new V3() }, uTexel: { value: new THREE.Vector2(1 / HW, 1 / HH) },
+  },
+  vertexShader: `
+    uniform sampler2D hmap; varying vec2 vUv; varying vec3 vPos; varying float vH;
+    void main(){
+      vUv=uv; float h=texture2D(hmap,uv).r; vH=h;
+      float e=smoothstep(0.,.03,min(min(uv.x,1.-uv.x),min(uv.y,1.-uv.y)));
+      vec3 p=normalize(position)*(${R.toFixed(1)}+h/1000.*${EXAG.toFixed(2)}*e+.002);
+      vPos=(modelMatrix*vec4(p,1.)).xyz; gl_Position=projectionMatrix*viewMatrix*vec4(vPos,1.);
+    }`,
+  fragmentShader: NOISE + LATLON + `
+    uniform sampler2D map, ibk, earth, hmap; uniform vec4 uBB, uIB; uniform vec3 uSun, uRegionSun; uniform vec2 uTexel;
+    uniform float uAlt, uSnowLine, uFrost, uWinter;
+    varying vec2 vUv; varying vec3 vPos; varying float vH;
+    void main(){
+      vec2 ll=latlon(vPos); float lat=ll.x*180./PI, lon=ll.y*180./PI;
+      vec3 up=normalize(vPos), east=normalize(vec3(up.z,0.,-up.x)), north=cross(up,east);
+      // normal from the height map (exaggerated)
+      float hL=texture2D(hmap,vUv-vec2(uTexel.x,0.)).r, hR=texture2D(hmap,vUv+vec2(uTexel.x,0.)).r;
+      float hD=texture2D(hmap,vUv-vec2(0.,uTexel.y)).r, hU=texture2D(hmap,vUv+vec2(0.,uTexel.y)).r;
+      float dx=(uBB.y-uBB.x)*111320.*cos(ll.x)*uTexel.x*2., dy=(uBB.w-uBB.z)*110570.*uTexel.y*2.;
+      vec3 ne=normalize(vec3(-(hR-hL)/dx*${EXAG.toFixed(2)}, -(hU-hD)/dy*${EXAG.toFixed(2)}, 1.));
+      vec3 N=normalize(east*ne.x+north*ne.y+up*ne.z);
+      vec3 L=normalize(mix(uRegionSun,normalize(uSun),smoothstep(400.,2500.,uAlt)));
+      float dif=max(dot(N,L),0.);
+
+      vec3 base=texture2D(map,vUv).rgb;
+      vec2 iuv=vec2((lon-uIB.x)/(uIB.y-uIB.x),(lat-uIB.z)/(uIB.w-uIB.z));
+      if(iuv.x>0.&&iuv.x<1.&&iuv.y>0.&&iuv.y<1.){
+        float w=smoothstep(0.,.08,min(min(iuv.x,1.-iuv.x),min(iuv.y,1.-iuv.y)));
+        base=mix(base,texture2D(ibk,iuv).rgb,w);
+      }
+      base*=1.75;
+      float lum=dot(base,vec3(.2126,.7152,.0722));
+      base=mix(base,mix(vec3(lum),base,.62)*vec3(1.,.97,.95),uWinter);   // dormant winter tones
+
+      // snow: elevation + noise, thinned on cliffs and under forest
+      float nz=vnoise(vec3(vUv*vec2(300.,450.),1.))*.6+vnoise(vec3(vUv*vec2(1100.,1650.),2.))*.4;
+      float line=uSnowLine+(nz-.5)*520.;
+      float s=smoothstep(line-260.,line+260.,vH);
+      s*=mix(.22,1.,smoothstep(.6,.86,ne.z));
+      float forest=1.-smoothstep(.035,.09,lum);
+      s*=mix(1.,.28,forest*(1.-smoothstep(1650.,2050.,vH)));
+      s=max(s,uFrost*(.35+.65*nz)*(1.-forest*.75)*smoothstep(.6,.9,ne.z));
+      s*=uWinter;
+
+      vec3 ground=base*(.52+.85*dif);
+      vec3 snow=mix(vec3(.42,.52,.72),vec3(1.,.985,.96),smoothstep(.0,.75,dif))*(.55+.6*dif);
+      vec3 col=mix(ground,snow,s);
+
+      // seamless hand-off to the globe at the patch edges
+      float e=smoothstep(0.,.1,min(min(vUv.x,1.-vUv.x),min(vUv.y,1.-vUv.y)));
+      vec3 g=texture2D(earth,vec2(ll.y/(2.*PI)+.5,ll.x/PI+.5)).rgb;
+      float gl=dot(g,vec3(.2126,.7152,.0722)); g=mix(g,mix(vec3(gl),g,.62)*vec3(1.,.97,.95),uWinter);
+      g*=(.18+1.05*max(dot(up,L),0.));
+      col=mix(g,col,e);
+
+      // aerial perspective
+      float dist=length(cameraPosition-vPos);
+      float fd=90.+uAlt*4.;
+      vec3 haze=vec3(.64,.73,.86);
+      col=mix(col,haze,(1.-exp(-dist/fd))*.6*(1.-smoothstep(600.,2500.,uAlt)));
+      gl_FragColor=vec4(col,1.); gl_FragColor=linearToOutputTexel(gl_FragColor);
+    }`,
+});
+function buildTerrain() {
+  const NX = 480, NY = 720, pos = new Float32Array(NX * NY * 3), uv = new Float32Array(NX * NY * 2), v = new V3();
+  for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+    const u = i / (NX - 1), w = j / (NY - 1), k = j * NX + i;
+    llv(lerp(BB.S, BB.N, w), lerp(BB.W, BB.E, u), 0, v);
+    pos.set([v.x, v.y, v.z], k * 3); uv.set([u, w], k * 2);
+  }
+  const idx = new Uint32Array((NX - 1) * (NY - 1) * 6); let n = 0;
+  for (let j = 0; j < NY - 1; j++) for (let i = 0; i < NX - 1; i++) {
+    const a = j * NX + i, b = a + 1, c = a + NX, d = c + 1;
+    idx[n++] = a; idx[n++] = b; idx[n++] = c; idx[n++] = b; idx[n++] = d; idx[n++] = c;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  g.computeBoundingSphere(); g.boundingSphere.radius += 10;
+  const m = new THREE.Mesh(g, terrainMat); scene.add(m);
+  const c = llv(48.0, 11.3, 0), f = enu(c), az = 165 * D2R, el = 24 * D2R;
+  terrainMat.uniforms.uRegionSun.value.copy(f.east).multiplyScalar(Math.sin(az) * Math.cos(el))
+    .addScaledVector(f.north, Math.cos(az) * Math.cos(el)).addScaledVector(f.up, Math.sin(el)).normalize();
+  globeMat.uniforms.uRegionSun.value.copy(terrainMat.uniforms.uRegionSun.value);
+}
+
+/* ---------- paths ---------- */
+class Path {
+  constructor(pts) {   // pts: Vector3[] (world)
+    this.p = pts; this.s = [0];
+    for (let i = 1; i < pts.length; i++) this.s.push(this.s[i - 1] + pts[i].distanceTo(pts[i - 1]));
+    this.len = this.s[this.s.length - 1];
+  }
+  at(d, out = new V3(), tan) {
+    d = clamp(d, 0, this.len); let lo = 0, hi = this.s.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (this.s[m] < d) lo = m; else hi = m; }
+    const t = (d - this.s[lo]) / Math.max(1e-9, this.s[hi] - this.s[lo]);
+    out.lerpVectors(this.p[lo], this.p[hi], t);
+    if (tan) tan.subVectors(this.p[hi], this.p[lo]).normalize();
+    return out;
+  }
+  reversed() { return new Path(this.p.slice().reverse()); }
+}
+function chaikin(ll, it = 2) {
+  for (let k = 0; k < it; k++) {
+    const o = [ll[0]];
+    for (let i = 0; i < ll.length - 1; i++) {
+      const a = ll[i], b = ll[i + 1];
+      o.push([a[0] * .75 + b[0] * .25, a[1] * .75 + b[1] * .25], [a[0] * .25 + b[0] * .75, a[1] * .25 + b[1] * .75]);
+    }
+    o.push(ll[ll.length - 1]); ll = o;
+  }
+  return ll;
+}
+function groundPath(lonlat, lift = 0.07, step = 0.25) {
+  const ll = chaikin(lonlat), pts = [];
+  for (let i = 0; i < ll.length - 1; i++) {
+    const [x0, y0] = ll[i], [x1, y1] = ll[i + 1];
+    const km = Math.hypot((x1 - x0) * 74.5, (y1 - y0) * 111.2), n = Math.max(1, Math.ceil(km / step));
+    for (let k = 0; k < n; k++) { const t = k / n; pts.push(ground(lerp(y0, y1, t), lerp(x0, x1, t), lift)); }
+  }
+  const e = ll[ll.length - 1]; pts.push(ground(e[1], e[0], lift));
+  return new Path(pts);
+}
+function flightPath(a, b) {   // a,b: {lat,lon}
+  const va = llv(a.lat, a.lon).normalize(), vb = llv(b.lat, b.lon).normalize();
+  const ang = va.angleTo(vb), gkm = ang * R, peak = Math.min(gkm * 0.11, 850);
+  const ha = terrainKm(a.lat, a.lon) + 0.05, hb = terrainKm(b.lat, b.lon) + 0.05, pts = [], N = 320;
+  const q = new THREE.Quaternion(), axis = new V3().crossVectors(va, vb).normalize();
+  for (let i = 0; i <= N; i++) {
+    const t = i / N; q.setFromAxisAngle(axis, ang * t);
+    const h = lerp(ha, hb, t) + peak * Math.pow(Math.sin(Math.PI * t), 0.75);
+    pts.push(va.clone().applyQuaternion(q).multiplyScalar(R + h));
+  }
+  const p = new Path(pts); p.groundKm = gkm; return p;
+}
+
+/* ---------- ribbons (routes & rivers) ---------- */
+const ribbonVS = `
+  attribute vec3 aNext; attribute float aSide; attribute float aU;
+  uniform vec2 uRes; uniform float uFocal, uWorldW, uMinPx, uMaxPx; varying float vU, vSide;
+  void main(){
+    vec4 mP=modelViewMatrix*vec4(position,1.), mN=modelViewMatrix*vec4(aNext,1.);
+    vec4 cP=projectionMatrix*mP, cN=projectionMatrix*mN;
+    vec2 d=(cN.xy/max(cN.w,1e-4)-cP.xy/max(cP.w,1e-4))*uRes; d=length(d)<1e-5?vec2(1.,0.):normalize(d);
+    float px=clamp(uWorldW*uFocal/max(-mP.z,1e-3),uMinPx,uMaxPx);
+    cP.xy+=vec2(-d.y,d.x)*aSide*px/uRes*cP.w;
+    gl_Position=cP; vU=aU; vSide=aSide;
+  }`;
+function ribbonGeom(path) {
+  const n = path.p.length, P = new Float32Array(n * 6), Nx = new Float32Array(n * 6), S = new Float32Array(n * 2), U = new Float32Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    const a = path.p[i], b = i < n - 1 ? path.p[i + 1] : a.clone().multiplyScalar(2).sub(path.p[i - 1]);
+    for (let k = 0; k < 2; k++) {
+      P.set([a.x, a.y, a.z], (i * 2 + k) * 3); Nx.set([b.x, b.y, b.z], (i * 2 + k) * 3);
+      S[i * 2 + k] = k ? 1 : -1; U[i * 2 + k] = path.s[i];
+    }
+  }
+  const idx = []; for (let i = 0; i < n - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('aNext', new THREE.BufferAttribute(Nx, 3));
+  g.setAttribute('aSide', new THREE.BufferAttribute(S, 1)); g.setAttribute('aU', new THREE.BufferAttribute(U, 1));
+  g.setIndex(idx); g.computeBoundingSphere(); g.boundingSphere.radius += 50;
+  return g;
+}
+function routeRibbon(path, color, dashed) {
+  const g = ribbonGeom(path), mats = [];
+  for (const xray of [false, true]) {
+    const m = new THREE.ShaderMaterial({
+      uniforms: { ...uni, uColor: { value: new THREE.Color(color) }, uReveal: { value: path.len }, uAlpha: { value: .25 },
+        uWorldW: { value: 0.12 }, uMinPx: { value: dashed ? 3.2 : 3.6 }, uMaxPx: { value: 9 }, uTotal: { value: path.len } },
+      transparent: true, depthWrite: false, depthTest: !xray, side: THREE.DoubleSide,
+      vertexShader: ribbonVS,
+      fragmentShader: `uniform vec3 uColor; uniform float uReveal,uAlpha,uTime,uTotal; varying float vU, vSide;
+        void main(){ if(vU>uReveal) discard;
+          float a=uAlpha*(1.-smoothstep(.55,1.,abs(vSide)));
+          ${dashed ? 'a*=.55+.45*step(.4,fract(vU/uTotal*90.-uTime*.6));' : ''}
+          gl_FragColor=vec4(uColor*(1.1-.35*abs(vSide)),a${xray ? '*.28' : ''}); gl_FragColor=linearToOutputTexel(gl_FragColor); }`,
+    });
+    const mesh = new THREE.Mesh(g, m); mesh.renderOrder = xray ? 3 : 2; mesh.frustumCulled = false;
+    scene.add(mesh); mats.push(m);
+  }
+  return { path, mats, set(k, v) { for (const m of mats) m.uniforms[k].value = v; } };
+}
+function riverRibbon(path, worldW) {
+  const m = new THREE.ShaderMaterial({
+    uniforms: { ...uni, uWorldW: { value: worldW }, uMinPx: { value: 1.2 }, uMaxPx: { value: 8 } },
+    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    vertexShader: ribbonVS,
+    fragmentShader: NOISE + `uniform float uTime,uAlt,uWinter; varying float vU, vSide;
+      void main(){
+        float edge=1.-smoothstep(.45,1.,abs(vSide));
+        float flow=vnoise(vec3(vU*1.6-uTime*.9, vSide*2., 0.))*.6+vnoise(vec3(vU*5.-uTime*2.6, vSide*5., 3.))*.4;
+        vec3 glacial=vec3(.30,.62,.60), sheen=vec3(.85,.97,1.);
+        vec3 c=mix(glacial,sheen,smoothstep(.55,.85,flow)*.75);
+        float a=edge*.9*(1.-smoothstep(500.,1400.,uAlt));
+        gl_FragColor=vec4(c,a); gl_FragColor=linearToOutputTexel(gl_FragColor);
+      }`,
+  });
+  const mesh = new THREE.Mesh(ribbonGeom(path), m); mesh.renderOrder = 1; mesh.frustumCulled = false; scene.add(mesh);
+}
+
+/* ---------- vehicles (procedural low-poly stand-ins for Blender .glb models) ---------- */
+const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: .45, metalness: .15, ...o });
+function shapeMesh(pts, planeKind, depth, mat) {
+  const s = new THREE.Shape(); pts.forEach(([a, b], i) => i ? s.lineTo(a, planeKind === 'xz' ? -b : b) : s.moveTo(a, planeKind === 'xz' ? -b : b));
+  const g = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: false });
+  g.translate(0, 0, -depth / 2);
+  if (planeKind === 'xz') g.rotateX(-Math.PI / 2); else g.rotateY(-Math.PI / 2);
+  return new THREE.Mesh(g, mat);
+}
+function makePlane() {
+  const g = new THREE.Group(), white = M(0xf3f2ee), navy = M(0x1d3466), grey = M(0x9aa3ad, { metalness: .5 });
+  const fus = new THREE.Mesh(new THREE.CylinderGeometry(.055, .055, .78, 20), white); fus.rotation.x = Math.PI / 2; g.add(fus);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(.055, 20, 14), white); nose.scale.set(1, 1, 2.3); nose.position.z = .39; g.add(nose);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(.055, .24, 20), white); tail.rotation.x = -Math.PI / 2; tail.position.set(0, .012, -.51); g.add(tail);
+  for (const sx of [1, -1]) {
+    const w = shapeMesh([[0, .12], [.56 * sx, -.13], [.56 * sx, -.2], [0, -.1]], 'xz', .014, white); w.position.y = -.02; g.add(w);
+    const st = shapeMesh([[0, -.42], [.2 * sx, -.55], [.2 * sx, -.6], [0, -.56]], 'xz', .01, white); st.position.y = .02; g.add(st);
+    const eng = new THREE.Mesh(new THREE.CylinderGeometry(.032, .028, .14, 14), grey); eng.rotation.x = Math.PI / 2; eng.position.set(.2 * sx, -.065, .06); g.add(eng);
+  }
+  const fin = shapeMesh([[-.4, .04], [-.6, .25], [-.66, .25], [-.62, .04]], 'zy', .012, navy); g.add(fin);
+  const stripe = new THREE.Mesh(new THREE.CylinderGeometry(.0565, .0565, .5, 20, 1, true, -.6, 1.2), navy); stripe.rotation.x = Math.PI / 2; stripe.rotation.z = Math.PI; g.add(stripe);
+  return g;
+}
+function makeTrainCar(lead) {
+  const g = new THREE.Group(), white = M(0xf2f2ef), red = M(0xc8102e), glass = M(0x1b2430, { roughness: .2, metalness: .6 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(.2, .2, .9), white); body.position.y = .1; g.add(body);
+  const st = new THREE.Mesh(new THREE.BoxGeometry(.205, .03, .9), red); st.position.y = .05; g.add(st);
+  const win = new THREE.Mesh(new THREE.BoxGeometry(.206, .055, .82), glass); win.position.y = .14; g.add(win);
+  if (lead) {
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(.1, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2), white);
+    nose.scale.set(1, 1, 2.2); nose.rotation.x = Math.PI / 2; nose.position.set(0, .1, .45); g.add(nose);
+    const ws = new THREE.Mesh(new THREE.SphereGeometry(.101, 18, 8, 0, Math.PI * 2, .2, .5), glass);
+    ws.scale.set(1, 1, 2.2); ws.rotation.x = Math.PI / 2; ws.position.set(0, .11, .45); g.add(ws);
+  }
+  return g;
+}
+function makeVan() {
+  const g = new THREE.Group(), black = M(0x17191c, { metalness: .6, roughness: .3 }), glass = M(0x3a4654, { roughness: .1, metalness: .7 }), tyre = M(0x0a0a0a);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(.4, .34, .95), black); body.position.y = .25; g.add(body);
+  const hood = new THREE.Mesh(new THREE.BoxGeometry(.39, .2, .2), black); hood.position.set(0, .18, .55); g.add(hood);
+  const ws = new THREE.Mesh(new THREE.BoxGeometry(.37, .16, .02), glass); ws.position.set(0, .35, .47); ws.rotation.x = -.5; g.add(ws);
+  const side = new THREE.Mesh(new THREE.BoxGeometry(.405, .12, .7), glass); side.position.set(0, .33, -.05); g.add(side);
+  for (const [x, z] of [[.19, .42], [-.19, .42], [.19, -.32], [-.19, -.32]]) {
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(.08, .08, .06, 14), tyre); w.rotation.z = Math.PI / 2; w.position.set(x, .08, z); g.add(w);
+  }
+  return g;
+}
+const plane = makePlane(), plane2 = makePlane(), van = makeVan();
+const train = new THREE.Group(); const cars = [makeTrainCar(true), makeTrainCar(false), makeTrainCar(false), makeTrainCar(false)];
+cars.forEach(c => train.add(c));
+[plane, plane2, van, train].forEach(o => { o.visible = false; scene.add(o); });
+scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x3a3328, 1.3));
+const keyLight = new THREE.DirectionalLight(0xffffff, 2.2); scene.add(keyLight); scene.add(keyLight.target);
+
+const _m = new THREE.Matrix4(), _x = new V3(), _y = new V3(), _z = new V3();
+function placeObj(obj, pos, tan, scale, keepPitch) {
+  _y.copy(pos).normalize();
+  _z.copy(tan);
+  if (!keepPitch) _z.addScaledVector(_y, -_z.dot(_y));
+  _z.normalize();
+  _x.crossVectors(_y, _z).normalize(); _y.crossVectors(_z, _x);
+  _m.makeBasis(_x, _y, _z); obj.quaternion.setFromRotationMatrix(_m);
+  obj.position.copy(pos); obj.scale.setScalar(scale);
+}
+const vScale = (pos, k, min) => Math.max(min, camera.position.distanceTo(pos) * k);
+function drawPlane(obj, path, d) {
+  const p = path.at(d, new V3(), _tan); placeObj(obj, p, _tan, vScale(p, .05, .06), true); obj.visible = true; return p;
+}
+const _tan = new V3(), _tp = new V3();
+function drawTrain(path, d) {
+  const lead = path.at(d, new V3(), _tan), s = vScale(lead, .02, .03);
+  cars.forEach((c, i) => { const q = path.at(d - i * s * .97, _tp, _tan); placeObj(c, q, _tan, s); });
+  train.visible = true; return lead;
+}
+function drawVan(path, d) { const p = path.at(d, new V3(), _tan); placeObj(van, p, _tan, vScale(p, .022, .02)); van.visible = true; return p; }
+function hideVehicles() { [plane, plane2, van, train].forEach(o => o.visible = false); }
+
+/* ---------- local alpine clouds (sprites) ---------- */
+const sprites = [];
+function cloudTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d');
+  for (let i = 0; i < 26; i++) {
+    const r = 30 + Math.random() * 60, px = 128 + (Math.random() - .5) * 120, py = 132 + (Math.random() - .5) * 60;
+    const g = x.createRadialGradient(px, py, 0, px, py, r);
+    g.addColorStop(0, 'rgba(255,255,255,.32)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function buildSprites() {
+  const t = cloudTexture();
+  for (let i = 0; i < 46; i++) {
+    const m = new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, opacity: 0, color: 0xf4f6fa });
+    const s = new THREE.Sprite(m);
+    const lat = 46.95 + Math.random() * .85, lon = 10.0 + Math.random() * 2.4;
+    const size = 7 + Math.random() * 12;
+    s.userData = { lat, lon, h: 4.4 + Math.random() * 1.8, size, base: .55 + Math.random() * .4, drift: .002 + Math.random() * .003 };
+    s.scale.set(size * 1.8, size, 1); s.renderOrder = 4; scene.add(s); sprites.push(s);
+  }
+  // a cloud bank along the edge of the detailed terrain hides the seam with the globe from mid altitudes
+  for (let i = 0; i < 70; i++) {
+    const m = new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, opacity: 0, color: 0xeef1f6 });
+    const s = new THREE.Sprite(m), side = i % 4, f = Math.random(), j = (Math.random() - .5) * .14;
+    const lat = side === 0 ? BB.S + j : side === 1 ? BB.N + j : lerp(BB.S, BB.N, f);
+    const lon = side === 2 ? BB.W + j * 1.4 : side === 3 ? BB.E + j * 1.4 : lerp(BB.W, BB.E, f);
+    const size = 45 + Math.random() * 45;
+    s.userData = { lat: side < 2 ? lat : lat, lon, h: 10 + Math.random() * 14, size, base: .8 + Math.random() * .2, drift: 0, border: 1 };
+    s.scale.set(size * 1.7, size, 1); s.renderOrder = 4; scene.add(s); sprites.push(s);
+  }
+}
+function updateSprites(dt, alt) {
+  for (const s of sprites) {
+    const u = s.userData; u.lon += u.drift * dt; if (u.lon > 12.45) u.lon = 10.0;
+    llv(u.lat, u.lon, u.h, s.position);
+    const d = camera.position.distanceTo(s.position);
+    if (u.border) { s.material.opacity = u.base * state.clouds * smooth(70, 160, alt) * (1 - smooth(900, 1800, alt)); continue; }
+    s.material.opacity = u.base * .7 * state.clouds * smooth(u.size * 1.2, u.size * 4, d) * (1 - smooth(250, 700, alt));
+  }
+}
+
+/* ---------- full-screen cloud veil for big moves ---------- */
+const veilScene = new THREE.Scene(), veilCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const veilMat = new THREE.ShaderMaterial({
+  uniforms: { ...uni, uCover: { value: 0 }, uOff: { value: new THREE.Vector2() } }, transparent: true, depthTest: false, depthWrite: false,
+  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`,
+  fragmentShader: NOISE + `uniform float uCover,uTime; uniform vec2 uOff,uRes; varying vec2 vUv;
+    void main(){
+      vec2 p=(vUv-.5)*vec2(uRes.x/uRes.y,1.)*2.2;
+      float a1=fbm(vec3(p*1.2+uOff*.6, uTime*.05)), a2=fbm(vec3(p*2.6+uOff*1.4+7., uTime*.08));
+      float n=a1*.6+a2*.4;
+      float th=mix(.75,.12,uCover);
+      float a=smoothstep(th,th+.25,n)*smoothstep(0.,.25,uCover);
+      vec3 c=mix(vec3(.70,.76,.86),vec3(1.,.99,.97),smoothstep(.3,.8,a2));
+      gl_FragColor=vec4(c,clamp(a*1.15,0.,1.)); gl_FragColor=linearToOutputTexel(gl_FragColor);
+    }`,
+});
+veilScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), veilMat));
+
+/* ---------- snowfall overlay (Christmas in Innsbruck) ---------- */
+const snowCv = document.getElementById('snow'), sctx = snowCv.getContext('2d');
+const flakes = Array.from({ length: 220 }, () => ({ x: Math.random(), y: Math.random(), r: .6 + Math.random() * 2.2, v: .02 + Math.random() * .05, w: Math.random() * 6 }));
+function drawSnow(dt, amt) {
+  const w = snowCv.width, h = snowCv.height; sctx.clearRect(0, 0, w, h);
+  if (amt < .01 || reduceMotion) return;
+  sctx.fillStyle = `rgba(255,255,255,${.75 * amt})`;
+  for (const f of flakes) {
+    f.y += f.v * dt * (0.6 + f.r * .3); f.w += dt; if (f.y > 1.02) { f.y = -.02; f.x = Math.random(); }
+    const x = (f.x + Math.sin(f.w) * .006) * w, y = f.y * h;
+    sctx.beginPath(); sctx.arc(x, y, f.r * devicePixelRatio * .7, 0, 6.283); sctx.fill();
+  }
+}
+
+/* ---------- camera rig ---------- */
+const cam = { target: llv(37.65, -97.43), dist: 9000, heading: 0, tilt: 0 };
+function applyCam() {
+  const f = enu(cam.target), h = cam.heading * D2R, t = cam.tilt * D2R;
+  const fwd = f.north.clone().multiplyScalar(Math.cos(h)).addScaledVector(f.east, Math.sin(h));
+  camera.position.copy(cam.target).addScaledVector(f.up, Math.cos(t) * cam.dist).addScaledVector(fwd, -Math.sin(t) * cam.dist);
+  camera.up.copy(fwd).multiplyScalar(Math.cos(t)).addScaledVector(f.up, Math.sin(t));
+  camera.lookAt(cam.target);
+  const alt = Math.max(.05, camera.position.length() - R);
+  camera.near = clamp(Math.min(alt, cam.dist) * .03, .004, 2000);
+  camera.far = Math.sqrt(alt * (2 * R + alt)) + 600 + cam.dist;
+  camera.updateProjectionMatrix();
+  return alt;
+}
+function headingOf(pos, tan) { const f = enu(pos); return Math.atan2(tan.dot(f.east), tan.dot(f.north)) / D2R; }
+function view(lat, lon, dist, tilt = 0, heading = 0) { return { target: ground(lat, lon), dist, tilt, heading }; }
+
+let token = { dead: false };
+function anim(dur, fn) {
+  const tok = token;
+  return new Promise(res => {
+    const t0 = performance.now();
+    (function tick() {
+      if (tok.dead) return res(false);
+      const t = clamp((performance.now() - t0) / (dur * 1000), 0, 1);
+      fn(t); if (t >= 1) return res(true);
+      requestAnimationFrame(tick);
+    })();
+  });
+}
+const wait = s => anim(s, () => {});
+function flyTo(to, dur) {
+  const a = cam.target.clone(), ra = a.length(), b = to.target.clone(), rb = b.length();
+  const an = a.clone().normalize(), bn = b.clone().normalize(), ang = an.angleTo(bn), gkm = ang * R;
+  const d0 = cam.dist, d1 = to.dist, h0 = cam.heading, t0 = cam.tilt;
+  const peak = Math.max(d0, d1, gkm * 1.1);
+  const bump = Math.log(peak) - Math.max(Math.log(d0), Math.log(d1));
+  const span = Math.log(peak / Math.min(d0, d1));
+  const veil = state.clouds * clamp((span - 2.2) / 2.4, 0, .95);
+  dur = dur ?? clamp(1.4 + .55 * Math.log(1 + gkm / 20) + .25 * span, 1.6, 6.5);
+  if (reduceMotion) dur = .01;
+  const axis = new V3().crossVectors(an, bn); if (axis.lengthSq() < 1e-12) axis.set(0, 1, 0); axis.normalize();
+  const q = new THREE.Quaternion();
+  return anim(dur, t => {
+    const e = ease(t), arc = Math.sin(Math.PI * e);
+    q.setFromAxisAngle(axis, ang * e);
+    cam.target.copy(an).applyQuaternion(q).multiplyScalar(lerp(ra, rb, e));
+    cam.dist = Math.exp(lerp(Math.log(d0), Math.log(d1), e) + Math.max(0, bump) * arc);
+    cam.heading = lerpAngle(h0, to.heading, e);
+    cam.tilt = lerp(t0, to.tilt, e) * (1 - .75 * arc * clamp(bump / 1.5, 0, 1));
+    state.veil = veil * Math.pow(arc, 1.6);
+    state.veilOff.x += .004 * arc; state.veilOff.y -= .002 * arc;
+  }).then(r => { state.veil = 0; return r; });
+}
+
+/* ---------- places & labels ---------- */
+const PL = {
+  ict: { lat: 37.650, lon: -97.433, name: 'Wichita (ICT)', flip: 1 }, ord: { lat: 41.978, lon: -87.905, name: "Chicago O'Hare" },
+  den: { lat: 39.856, lon: -104.674, name: 'Denver (DEN)', flip: 1 }, muc: { lat: 48.354, lon: 11.786, name: 'Munich Airport' },
+  munich: { lat: 48.137, lon: 11.575, name: 'Munich' }, ibk: { lat: 47.2686, lon: 11.3933, name: 'Innsbruck' },
+  nue: { lat: 49.4521, lon: 11.0767, name: 'Nuremberg' }, neu: { lat: 47.5576, lon: 10.7498, name: 'Neuschwanstein' },
+  hilton: { lat: 48.1283, lon: 11.5925, name: 'Hilton Munich City', minor: 1, max: 45 },
+  mond: { lat: 47.2700, lon: 11.3920, name: 'Hotel Mondschein', minor: 1, max: 30 },
+  dom: { lat: 47.2690, lon: 11.3935, name: 'Dom St. Jakob', minor: 1, max: 14, dy: 14 },
+  nord: { lat: 47.3105, lon: 11.3838, name: 'Nordkette · 2,334 m', minor: 1, max: 60 },
+  frau: { lat: 48.1386, lon: 11.5736, name: 'Frauenkirche', minor: 1, max: 30, dy: 14 },
+  inn: { lat: 47.282, lon: 11.505, name: 'River Inn', minor: 1, max: 40 },
+};
+const US = new Set(['ict', 'ord', 'den']);
+const labelsEl = document.getElementById('labels');
+for (const [k, p] of Object.entries(PL)) {
+  const el = document.createElement('div'); el.className = 'lbl' + (p.minor ? ' minor' : '') + (p.flip ? ' flip' : ''); el.textContent = p.name;
+  labelsEl.appendChild(el); p.el = el; p.k = k;
+}
+const _pv = new V3();
+function updateLabels() {
+  const w = innerWidth, h = innerHeight, camN = camera.position.clone().normalize();
+  for (const p of Object.values(PL)) {
+    const pos = ground(p.lat, p.lon, .05); p.v = pos;
+    const d = camera.position.distanceTo(pos);
+    let show = d < (p.max ?? (US.has(p.k) ? 30000 : 3500)) && (US.has(p.k) ? d > 250 : true);
+    if (p.k === 'munich' && d < 20) show = false;
+    const facing = pos.clone().normalize().dot(_pv.subVectors(camera.position, pos).normalize()) > -0.02;
+    _pv.copy(pos).project(camera);
+    show = show && facing && _pv.z < 1 && Math.abs(_pv.x) < 1.1 && Math.abs(_pv.y) < 1.1;
+    p.el.style.opacity = show ? 1 : 0;
+    if (show) p.el.style.transform = `translate(${((_pv.x + 1) / 2 * w - (p.flip ? p.el.offsetWidth - 4 : 4)).toFixed(1)}px, ${((1 - _pv.y) / 2 * h - 8 + (p.dy || 0)).toFixed(1)}px)`;
+  }
+}
+
+/* ---------- journey ---------- */
+const state = { clouds: 1, winter: 1, veil: 0, veilOff: new THREE.Vector2(), snow: 0, snowTarget: 0, orbit: 0, step: 0, progress: 0, playing: false };
+const COL = { flight: 0xDDBB6C, train: 0xE2677A, car: 0x79C596 };
+const ICON = {
+  flight: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 15.5v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V8.5l-8 5v2l8-2.5V19l-2.5 1.8V22l4-1.2 4 1.2v-1.2L13 19v-6z"/></svg>',
+  train: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 10h14M9 21l-2-4M15 21l2-4"/><circle cx="9" cy="13.5" r=".6" fill="currentColor"/><circle cx="15" cy="13.5" r=".6" fill="currentColor"/></svg>',
+  car: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V9.5L5.5 5h11L21 10v6"/><path d="M3 10h18M3 16h18"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>',
+  stay: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg>',
+};
+let ROUTES = {}, STEPS = [];
+
+function buildJourney(geo) {
+  const r = geo.routes;
+  const P = {
+    ictOrd: flightPath(PL.ict, PL.ord), ordMuc: flightPath(PL.ord, PL.muc),
+    aptCity: groundPath(r.apt_city), mucIbk: groundPath(r.muc_ibk), mucNue: groundPath(r.muc_nue), mucNeu: groundPath(r.muc_neusch),
+    mucDen: flightPath(PL.muc, PL.den), denIct: flightPath(PL.den, PL.ict), mucOrd: flightPath(PL.muc, PL.ord), ordIct: flightPath(PL.ord, PL.ict),
+  };
+  P.ibkMuc = P.mucIbk.reversed(); P.nueMuc = P.mucNue.reversed(); P.neuMuc = P.mucNeu.reversed();
+  const mk = (k, mode) => (ROUTES[k] = routeRibbon(P[k], COL[mode], mode === 'flight'));
+  mk('ictOrd', 'flight'); mk('ordMuc', 'flight'); mk('aptCity', 'train'); mk('mucIbk', 'train'); mk('mucNue', 'train');
+  mk('mucNeu', 'car'); mk('mucDen', 'flight'); mk('denIct', 'flight'); mk('mucOrd', 'flight'); mk('ordIct', 'flight');
+  for (const rv of geo.rivers) riverRibbon(groundPath(rv.pts, .03, .3), rv.name === 'Donau' ? .18 : .08);
+
+  const overview = () => ({ target: llv(47, -42), dist: 13500, tilt: 0, heading: 0 });
+  STEPS = [
+    { id: 'overview', mode: 'flight', eyebrow: 'Dec 20 – 29, 2026', title: 'Wichita to the Alps and home again',
+      meta: '8 travelers · 6 flights · 4 train rides · 1 drive', note: 'Press Next leg to follow the trip day by day. Drag to look around; scroll or pinch to zoom.',
+      routes: [], run: async () => { await flyTo(overview()); orbitIdle(.6); } },
+    { id: 'day1', mode: 'flight', eyebrow: 'Day 1 · Sun, Dec 20 · UA786', title: 'Wichita → Chicago O’Hare',
+      meta: '7:20 am – 9:32 am · 2h 12m · Boeing 737-800', note: 'Part of the family flies out of Wichita; the rest meet the group at O’Hare for an 8½-hour layover.',
+      routes: ['ictOrd'], run: () => flight([P.ictOrd], 'ictOrd', view(PL.ord.lat, PL.ord.lon, 900, 25, 60)) },
+    { id: 'day1b', day: 'day1', mode: 'flight', eyebrow: 'Day 1 → 2 · UA953 overnight', title: 'Chicago → Munich',
+      meta: '6:00 pm – 9:35 am Mon · 8h 35m · Boeing 787-8', note: 'All eight together across the Atlantic, landing in Munich mid-morning on the 21st.',
+      routes: ['ordMuc'], run: () => flight([P.ordMuc], 'ordMuc', view(PL.muc.lat, PL.muc.lon, 70, 52, 210)) },
+    { id: 'day2', mode: 'train', eyebrow: 'Day 2 · Mon, Dec 21 · S-Bahn S1 / S8', title: 'Munich Airport → Rosenheimer Platz',
+      meta: '~40–45 min · stop sits right below the Hilton', note: 'Settle in, fight the jet lag, and head out to the Christmas markets for dinner.',
+      routes: ['aptCity'], run: () => groundLeg(P.aptCity, 'aptCity', 'train', { end: view(48.135, 11.58, 16, 52, 300) }) },
+    { id: 'day3', mode: 'stay', eyebrow: 'Day 3 · Tue, Dec 22', title: 'Munich old town',
+      meta: 'Mass at the Frauenkirche 8:30 am · Catholic walking tour', note: 'A flat 2.5 km loop: Heilig-Geist, Alter Peter, Mariensäule, Frauenkirche, St. Michael, Bürgersaal, Asamkirche.',
+      routes: [], run: () => stay(view(48.1386, 11.5736, 15, 55, 200)) },
+    { id: 'day4', mode: 'train', eyebrow: 'Day 4 · Wed, Dec 23 · DB / ÖBB', title: 'Munich → Innsbruck',
+      meta: '~2.5 hrs · via Rosenheim & Kufstein, up the Inn valley', note: 'The line follows the River Inn into Tyrol, with the Karwendel and Nordkette rising on the right.',
+      routes: ['mucIbk'], run: () => groundLeg(P.mucIbk, 'mucIbk', 'train', { end: view(PL.ibk.lat, PL.ibk.lon, 9, 66, 335) }) },
+    { id: 'day5', mode: 'stay', snow: 1, eyebrow: 'Day 5 – 6 · Dec 24 – 25', title: 'Christmas in Innsbruck',
+      meta: 'Dinner at the Ottoburg 5:00 pm · Midnight Mass, Dom St. Jakob 11:30 pm', note: 'Hotel Mondschein sits on the Inn, under the snowy Nordkette. Christmas Day is free for the city and nearby getaways.',
+      routes: [], run: () => stay(view(PL.ibk.lat, PL.ibk.lon, 7.5, 68, 340), 1.2) },
+    { id: 'day7', mode: 'train', eyebrow: 'Day 7 · Sat, Dec 26 · ÖBB / DB', title: 'Innsbruck → Munich',
+      meta: '~2.5 hrs · back to the Hilton Munich City for 3 nights', note: 'Down the Inn valley and out onto the Bavarian plain. Edelweiss cooking class sometime this stay.',
+      routes: ['mucIbk'], run: () => groundLeg(P.ibkMuc, 'mucIbk', 'train', { end: view(48.135, 11.58, 22, 50, 20) }) },
+    { id: 'day8', mode: 'train', eyebrow: 'Day 8 · Sun, Dec 27 · day trip', title: 'Nuremberg Christkindlesmarkt',
+      meta: '~1 hr each way by direct train', note: 'One of Germany’s oldest Christmas markets, dating to the 16th century.',
+      routes: ['mucNue'], run: () => groundLeg(P.mucNue, 'mucNue', 'train', { roundTrip: P.nueMuc, stop: view(PL.nue.lat, PL.nue.lon, 14, 55, 330) }) },
+    { id: 'day9', mode: 'car', eyebrow: 'Day 9 · Mon, Dec 28 · private car', title: 'Neuschwanstein',
+      meta: '~2.5 hrs each way · timed-entry castle tickets', note: 'King Ludwig II’s unfinished fantasy castle, begun in 1869, above Hohenschwangau and the Alpsee.',
+      routes: ['mucNeu'], run: () => groundLeg(P.mucNeu, 'mucNeu', 'car', { roundTrip: P.neuMuc, stop: view(PL.neu.lat, PL.neu.lon, 8, 64, 175) }) },
+    { id: 'day10', mode: 'flight', eyebrow: 'Day 10 · Tue, Dec 29', title: 'Munich → home to Wichita',
+      meta: 'Via Denver: UA9459 11:50 am, UA4788 → ICT 8:02 pm · Via Chicago: UA952, UA2762 → ICT 11:52 pm', note: 'The family splits for the trip home: six through Denver, two through O’Hare.',
+      routes: ['mucDen', 'denIct', 'mucOrd', 'ordIct'], run: homeward },
+    { id: 'home', mode: 'stay', eyebrow: 'Tue, Dec 29 · late evening', title: 'Home for New Year’s',
+      meta: '10 days · Munich, Innsbruck, Nuremberg, Neuschwanstein', note: 'Frohe Weihnachten! Pick any leg below to replay it.',
+      routes: [], run: async () => { await flyTo(overview()); orbitIdle(.6); } },
+  ];
+
+  async function flight(paths, key, end) {
+    const p = paths[0];
+    const a = p.p[0].clone().normalize(), b = p.p[p.p.length - 1].clone().normalize();
+    const mid = a.clone().add(b).normalize().multiplyScalar(R);
+    const fd = clamp(p.groundKm * 1.25, 1200, 11000);
+    if (!await flyTo({ target: mid, dist: fd, tilt: 12, heading: 0 })) return;
+    const T = reduceMotion ? .01 : clamp(3 + p.groundKm / 1400, 4, 8.5);
+    const m0 = mid.clone();
+    const ok = await anim(T, t => {
+      const e = ease(t), d = e * p.len;
+      ROUTES[key].set('uReveal', d); drawPlane(plane, p, d);
+      cam.target.copy(m0).lerp(b.clone().multiplyScalar(R), e * .25).normalize().multiplyScalar(R);
+      cam.dist = fd * (1 - .12 * e); state.progress = t * .8;
+    });
+    if (!ok) return;
+    plane.visible = false;
+    await flyTo(end); state.progress = 1;
+  }
+  async function groundLeg(path, key, kind, o = {}) {
+    const draw = kind === 'train' ? drawTrain : drawVan;
+    const start = path.p[0], tan0 = new V3(); path.at(0.5, new V3(), tan0);
+    const h0 = headingOf(start, tan0);
+    if (!await flyTo({ target: start.clone(), dist: 14, tilt: 58, heading: h0 })) return;
+    const T = reduceMotion ? .01 : clamp(path.len / 11, 6, 13);
+    let hd = h0;
+    const ok = await anim(T, t => {
+      const e = t < .08 ? t * t / .16 : t > .92 ? 1 - (1 - t) * (1 - t) / .16 : t - .04;   // gentle start/stop
+      const d = clamp(e, 0, 1) * path.len, pos = draw(path, d);
+      ROUTES[key].set('uReveal', o.roundTrip ? d : (path === ROUTES[key].path ? d : ROUTES[key].path.len));
+      path.at(Math.min(path.len, d + 3), _tp, _tan);
+      hd = lerpAngle(hd, headingOf(pos, _tan), .04);
+      cam.target.copy(pos); cam.heading = hd; cam.dist = 13 + 22 * Math.sin(Math.PI * t); cam.tilt = 60 - 8 * Math.sin(Math.PI * t);
+      state.progress = t * (o.roundTrip ? .45 : .85);
+    });
+    if (!ok) return;
+    if (o.roundTrip) {
+      if (!await flyTo(o.stop, 2.4)) return;
+      if (!await anim(3.2, t => { cam.heading += .12; state.progress = .45 + t * .15; })) return;
+      const back = o.roundTrip, ends = [back.p[0], back.p[back.p.length - 1]];
+      const mid = ends[0].clone().add(ends[1]).multiplyScalar(.5);
+      if (!await flyTo({ target: mid, dist: back.len * 1.15 + 20, tilt: 30, heading: 0 }, 2)) return;
+      if (!await anim(reduceMotion ? .01 : 4, t => { draw(back, ease(t) * back.len); state.progress = .6 + t * .4; })) return;
+      hideVehicles();
+      await flyTo(view(48.135, 11.58, 20, 50, 0), 2);
+    } else {
+      await flyTo(o.end, 2.4);
+      orbitIdle(.8);
+    }
+    state.progress = 1;
+  }
+  async function stay(v, rate = 1) {
+    hideVehicles();
+    if (!await flyTo(v)) return;
+    state.progress = 1; orbitIdle(rate);
+  }
+  async function homeward() {
+    const a = P.mucDen, b = P.denIct, c = P.mucOrd, d2 = P.ordIct;
+    const mid = llv(52, -40), fd = 11500;
+    if (!await flyTo({ target: mid, dist: fd, tilt: 8, heading: 0 })) return;
+    const T = reduceMotion ? .01 : 8;
+    let ok = await anim(T, t => {
+      const e = ease(t);
+      ROUTES.mucDen.set('uReveal', e * a.len); ROUTES.mucOrd.set('uReveal', e * c.len);
+      drawPlane(plane, a, e * a.len); drawPlane(plane2, c, e * c.len); state.progress = t * .6;
+    });
+    if (!ok) return;
+    if (!await flyTo(view(39.2, -96, 2600, 15, 0), 2.5)) return;
+    ok = await anim(reduceMotion ? .01 : 4, t => {
+      const e = ease(t);
+      ROUTES.denIct.set('uReveal', e * b.len); ROUTES.ordIct.set('uReveal', e * d2.len);
+      drawPlane(plane, b, e * b.len); drawPlane(plane2, d2, e * d2.len); state.progress = .6 + t * .4;
+    });
+    if (!ok) return;
+    await flyTo(view(PL.ict.lat, PL.ict.lon, 1400, 20, 0), 2);
+  }
+}
+function orbitIdle(rate) { state.orbit = reduceMotion ? 0 : rate; }
+
+/* ---------- UI ---------- */
+const $ = id => document.getElementById(id);
+function renderUI() {
+  const s = STEPS[state.step];
+  $('mode').dataset.mode = s.mode; $('mode').innerHTML = ICON[s.mode];
+  $('eyebrow').textContent = s.eyebrow; $('title').textContent = s.title; $('meta').textContent = s.meta; $('note').textContent = s.note;
+  $('prev').disabled = state.step === 0;
+  $('next').textContent = state.step === STEPS.length - 1 ? 'Start over ↺' : 'Next leg →';
+  [...$('dots').children].forEach((d, i) => {
+    d.classList.toggle('done', i < state.step);
+    if (i === state.step) d.setAttribute('aria-current', 'step'); else d.removeAttribute('aria-current');
+  });
+}
+function setRouteStyles(i) {
+  const active = new Set(STEPS[i].routes);
+  const done = new Set(); STEPS.slice(0, i).forEach(s => s.routes.forEach(r => done.add(r)));
+  for (const [k, r] of Object.entries(ROUTES)) {
+    if (active.has(k)) { r.set('uAlpha', .95); r.set('uReveal', 0); }
+    else if (done.has(k)) { r.set('uAlpha', .7); r.set('uReveal', r.path.len); }
+    else { r.set('uAlpha', i === 0 || i === STEPS.length - 1 ? .75 : .2); r.set('uReveal', r.path.len); }
+  }
+}
+async function go(i, fromPlay) {
+  token.dead = true; token = { dead: false }; const my = token;
+  if (!fromPlay) state.playing = false;
+  state.step = (i + STEPS.length) % STEPS.length; state.progress = 0; state.orbit = 0; state.veil = 0;
+  const s = STEPS[state.step];
+  state.snowTarget = s.snow ? 1 : 0;
+  hideVehicles(); setRouteStyles(state.step); renderUI();
+  try { if (location.hash !== '#' + s.id) history.replaceState(null, '', '#' + s.id); } catch (e) {}
+  await s.run();
+  if (my.dead) return;
+  if (s.routes.length && s.mode !== 'flight') hideVehicles();
+}
+function buildDots() {
+  STEPS.forEach((s, i) => {
+    const b = document.createElement('button'); b.className = 'dot'; b.textContent = i === 0 ? '★' : i === STEPS.length - 1 ? '⌂' : String(i);
+    b.setAttribute('aria-label', s.title); b.title = s.title; b.onclick = () => go(i);
+    $('dots').appendChild(b);
+  });
+}
+addEventListener('hashchange', () => {
+  const h = location.hash.slice(1), i = STEPS.findIndex(s => s.id === h || s.day === h);
+  if (i >= 0 && i !== state.step) go(i);
+});
+$('next').onclick = () => go(state.step + 1);
+$('prev').onclick = () => go(state.step - 1);
+addEventListener('keydown', e => {
+  if (e.target.closest && e.target.closest('button') && (e.key === ' ' || e.key === 'Enter')) return;
+  if (e.key === 'ArrowRight') go(state.step + 1); else if (e.key === 'ArrowLeft') go(state.step - 1);
+});
+function toggle(btn, key) {
+  btn.onclick = () => { state[key] = state[key] ? 0 : 1; btn.setAttribute('aria-pressed', state[key] ? 'true' : 'false'); };
+}
+toggle($('tWinter'), 'winter'); toggle($('tClouds'), 'clouds');
+
+/* ---------- pointer: drag to look around, wheel / pinch to zoom ---------- */
+const pts = new Map(); let pinch0 = 0;
+const cv = renderer.domElement;
+cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); state.orbit = 0; });
+cv.addEventListener('pointermove', e => {
+  const p = pts.get(e.pointerId); if (!p) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (pts.size === 2) {
+    const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinch0) cam.dist = clamp(cam.dist * pinch0 / d, 2, 30000); pinch0 = d; return;
+  }
+  if (cam.dist > 600) {   // high up: spin the globe
+    const f = enu(cam.target), k = cam.dist / R * .0022;
+    cam.target.applyAxisAngle(f.north, -dx * k).applyAxisAngle(f.east, dy * k);
+  } else { cam.heading -= dx * .25; cam.tilt = clamp(cam.tilt - dy * .2, 0, 78); }
+});
+const up = e => { pts.delete(e.pointerId); pinch0 = 0; };
+cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+cv.addEventListener('wheel', e => { e.preventDefault(); cam.dist = clamp(cam.dist * Math.exp(e.deltaY * .0012), 2, 30000); }, { passive: false });
+
+/* ---------- frame loop ---------- */
+function resize() {
+  const w = innerWidth, h = innerHeight; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+  uni.uRes.value.set(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
+  uni.uFocal.value = uni.uRes.value.y / (2 * Math.tan(camera.fov * D2R / 2));
+  snowCv.width = w * devicePixelRatio; snowCv.height = h * devicePixelRatio;
+}
+addEventListener('resize', resize); resize();
+const bgSpace = new THREE.Color(0x03060c), bgSky = new THREE.Color(0x9fb4cc), bg = new THREE.Color();
+let last = performance.now(), winterV = 1;
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  uni.uTime.value += dt;
+  if (state.orbit) cam.heading += state.orbit * dt * 2.2;
+  const alt = applyCam(); uni.uAlt.value = alt;
+  // camera-relative sun for the globe so the visible side is always lit
+  const right = new V3().setFromMatrixColumn(camera.matrixWorld, 0), cup = new V3().setFromMatrixColumn(camera.matrixWorld, 1);
+  uni.uSun.value.copy(camera.position).normalize().multiplyScalar(R).addScaledVector(right, -R * .9).addScaledVector(cup, R * .7).normalize();
+  keyLight.position.copy(camera.position).addScaledVector(cup, cam.dist).addScaledVector(right, -cam.dist * .5);
+  keyLight.target.position.copy(cam.target);
+  winterV = lerp(winterV, state.winter, .08);
+  uni.uWinter.value = winterV; uni.uSnowLine.value = lerp(3400, 1300, winterV); uni.uFrost.value = .15 * winterV;
+  cloudShell.material.uniforms.uOn.value = lerp(cloudShell.material.uniforms.uOn.value, state.clouds, .1);
+  stars.material.opacity = smooth(300, 2500, alt);
+  bg.copy(bgSky).lerp(bgSpace, smooth(25, 900, alt)); renderer.setClearColor(bg);
+  updateSprites(dt, alt);
+  veilMat.uniforms.uCover.value = state.veil; veilMat.uniforms.uOff.value.copy(state.veilOff);
+  state.snow = lerp(state.snow, state.snowTarget * winterV * (cam.dist < 40 ? 1 : 0), .04);
+  drawSnow(dt, state.snow);
+  updateLabels();
+  $('prog').style.width = (state.progress * 100).toFixed(1) + '%';
+  renderer.clear(); renderer.render(scene, camera);
+  if (state.veil > .002) renderer.render(veilScene, veilCam);
+  requestAnimationFrame(frame);
+}
+
+/* ---------- boot ---------- */
+const loadTex = (url, srgb = true) => new Promise((res, rej) => new THREE.TextureLoader().load(url, t => {
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); res(t);
+}, undefined, rej));
+function loadHeight(url) {
+  return new Promise((res, rej) => {
+    const img = new Image(); img.onload = () => {
+      const c = document.createElement('canvas'); c.width = HW; c.height = HH; const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(img, 0, 0); const d = x.getImageData(0, 0, HW, HH).data;
+      const f = new Float32Array(HW * HH), half = new Uint16Array(HW * HH);
+      for (let j = 0; j < HH; j++) {            // flip rows so row 0 is the southern edge (v = 0)
+        const src = (HH - 1 - j) * HW;
+        for (let i = 0; i < HW; i++) { const k = (src + i) * 4, h = d[k] * 256 + d[k + 1]; f[j * HW + i] = h; half[j * HW + i] = THREE.DataUtils.toHalfFloat(h); }
+      }
+      const t = new THREE.DataTexture(half, HW, HH, THREE.RedFormat, THREE.HalfFloatType);
+      t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true;
+      res({ f, t });
+    };
+    img.onerror = rej; img.src = url;
+  });
+}
+(async () => {
+  const msg = $('loadmsg');
+  try {
+    msg.textContent = 'Loading globe';
+    tex.earth = await loadTex('assets/earth.jpg');
+    globeMat.uniforms.map.value = tex.earth; terrainMat.uniforms.earth.value = tex.earth;
+    msg.textContent = 'Loading Alpine terrain';
+    const [region, ibk, hm, geo] = await Promise.all([
+      loadTex('assets/region.jpg'), loadTex('assets/innsbruck.jpg'), loadHeight('assets/region-height.png'),
+      fetch('assets/geo.json').then(r => r.json()),
+    ]);
+    HF = hm.f; terrainMat.uniforms.map.value = region; terrainMat.uniforms.ibk.value = ibk; terrainMat.uniforms.hmap.value = hm.t;
+    buildTerrain(); buildSprites(); buildJourney(geo); buildDots();
+    requestAnimationFrame(frame);
+    $('loading').classList.add('gone');
+    const h = location.hash.slice(1), start = Math.max(0, STEPS.findIndex(s => s.id === h || s.day === h));
+    go(start);
+  } catch (err) {
+    console.error(err);
+    msg.textContent = 'The map data did not load. Check your connection and reload the page.';
+  }
+})();
+})();
+</script>
+</body>
+</html>
