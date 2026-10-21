@@ -17,9 +17,7 @@ for name in ['munich','inn','nue','neu']:
   idx=np.asarray(Image.open(f'packs/{name}-index.png')); atlas=np.asarray(Image.open(f'packs/{name}.jpg').convert('RGB')).astype(np.float32)
   ys,xs=np.where(idx[...,2]>0)
   ox=W+xs.min()*CW; oy=S_+ys.min()*CH
-  band=prep(LineString([mm(*p) for p in geo['routes'][ROUTE[name]]]).buffer(750).union(Point(0,0).buffer(1)))
-  hot=[Point(mm(lo,la)).buffer(1600) for la,lo in HOT[name]]
-  for hh_ in hot: band=prep(band.context.union(hh_))
+  line=LineString([mm(*p) for p in geo['routes'][ROUTE[name]]]); hotp=[Point(mm(lo,la)) for la,lo in HOT[name]]
   pts=[]
   for k in range(len(xs)):
     x,y=int(xs[k]),int(ys[k]); ax,ay=int(idx[y,x,0]),int(idx[y,x,1])
@@ -33,7 +31,9 @@ for name in ['munich','inn','nue','neu']:
     lon=W+x*CW+(gx[sel]+.5)/T*CW; lat=S_+y*CH+CH-(gy[sel]+.5)/T*CH
     hh,ww=coarse.shape
     h=map_coordinates(coarse,[(N-lat)/(N-S_)*hh-.5,(lon-W)/(E-W)*ww-.5],order=1)
-    keep=(h<1850)&np.array([band.contains(Point(mm(a,b_))) for a,b_ in zip(lon,lat)],bool)
+    # dense near the track and the stops, thinning out to nothing by 1.6 km so there is no hard edge
+    dist=np.array([min([line.distance(Point(mm(a,b_)))]+[q.distance(Point(mm(a,b_)))-900 for q in hotp]) for a,b_ in zip(lon,lat)])
+    keep=(h<1850)&(rng.random(len(dist))<np.clip((1600-dist)/1000,0,1))
     for a,b_ in zip(lon[keep],lat[keep]): pts.append((a,b_))
   pts=np.array(pts); rng.shuffle(pts)
   if len(pts)>CAP: pts=pts[:CAP]
