@@ -13,8 +13,8 @@ export default function create(ctx) {
     float sunVis(float ndl){
       if(uShadowOn<.01||ndl<=0.||any(lessThan(vS.xy, vec2(0.)))||any(greaterThan(vS.xy, vec2(1.)))) return 1.;
       float tn=sqrt(max(1.-ndl*ndl, 0.))/max(ndl, .12), b=(.35+uShadowTexel*(.8+1.2*min(tn, 5.)))*8.4e-5, t=.5/${SM}.;
-      float v=textureLod(uShadow, vec3(vS.xy+vec2(-t, -t), vS.z-b), 0.)+textureLod(uShadow, vec3(vS.xy+vec2(t, -t), vS.z-b), 0.)
-             +textureLod(uShadow, vec3(vS.xy+vec2(-t, t), vS.z-b), 0.)+textureLod(uShadow, vec3(vS.xy+vec2(t, t), vS.z-b), 0.);
+      float v=${phone() ? 'textureLod(uShadow, vec3(vS.xy, vS.z-b), 0.)*4.;   // phones: one hardware-filtered tap' : `textureLod(uShadow, vec3(vS.xy+vec2(-t, -t), vS.z-b), 0.)+textureLod(uShadow, vec3(vS.xy+vec2(t, -t), vS.z-b), 0.)
+             +textureLod(uShadow, vec3(vS.xy+vec2(-t, t), vS.z-b), 0.)+textureLod(uShadow, vec3(vS.xy+vec2(t, t), vS.z-b), 0.);`}
       vec2 e=min(vS.xy, 1.-vS.xy); return mix(1., v*.25, uShadowOn*smoothstep(0., .1, min(e.x, e.y)));
     }` : `float sunVis(float ndl){ return 1.; }`;
   // Per vertex: aP = facade coordinates in 1/16 m (walls: metres along the face, height; roofs: along the eave, down the slope),
@@ -56,7 +56,7 @@ export default function create(ctx) {
         float shut=bt(B, 8.), quoin=bt(B, 9.), timber=bt(B, 10.), balc=bt(B, 11.), church=bt(B, 12.), util=bt(B, 13.), modern=bt(B, 14.);
         float gableF=bt(ex, 0.), pitched=bt(ex, 1.), parap=bt(ex, 2.), ph=1.+ov*3., tower=step(6.5, kind);   // parapet walls keep its height in ov
         vec3 T=normalize(cross(up, n)); T*=sign(dot(dFdx(vL), T)*dFdx(u)+dot(dFdy(vL), T)*dFdy(u)+1e-12);   // along the wall, the way u runs
-        base=max(mix(vec3(dot(base, vec3(.2126, .7152, .0722))), base, 1.18), 0.)*.8; col=base;
+        base=max(mix(vec3(dot(base, vec3(.2126, .7152, .0722))), base, 1.08), 0.)*.8; col=base;
         if(F<.5) F=max(1., floor((E-.4)/3.15+.5));
         float g=style>.5&&style<4.5&&F>2.5?min(4., E*.36):style>4.5&&style<5.5?2.8:3.2;
         if(F<1.5) g=E;
@@ -77,7 +77,8 @@ export default function create(ctx) {
           col=ss*(1.-.35*j*det); quoin=0.;
         }
         if(timber>.5&&style>4.5&&style<5.5&&h>g+max(F-2., 0.)*fl-.12){ // Alpine farmhouse: the top storey in dark larch logs, a boarded gable
-          vec3 wood=timberCol(bn(acc, 2., 2.))*1.6+vec3(.05, .03, .015);
+          float wi0=bn(acc, 2., 2.);    // sun-burnt larch: dark umber on the sunny fronts, greyer with age
+          vec3 wood=wi0<.5?vec3(.085, .052, .032):wi0<1.5?vec3(.12, .072, .040):wi0<2.5?vec3(.075, .060, .048):vec3(.15, .088, .046);
           col=wood*(1.-.35*det*(h<E?pulse(h, fh, 0., .035, .21, -600., 600.):pulse(u, fu, 0., .03, .19, -600., 600.)));
           trimC=vec3(.80, .78, .74);
         }
@@ -141,7 +142,7 @@ export default function create(ctx) {
           float up1=step(g, h)*step(1.5, F);
           float y0=up1>.5?g+sill+floor((h-g-sill)/fl)*fl:F<1.5?max(.9, E*.3):1.05;
           float whh=up1>.5?wh:F<1.5?min(wh, E*.45):min(wh, g-1.5), lu=mod(u-lo-a0, P), lv=h-y0;
-          if(det>.01&&wg>.01){
+          if(det>.01&&wg>.01${phone() ? '&&far<.15' : ''}){        // (phones: only in close-ups, to keep the fragment cost down)
             // the glass sits back in the wall: from an angle one jamb and the sill (or the lintel) show beside it, and the sun
             // throws a jamb's and the lintel's shadow in; close up, the casement bars and a lace cafe curtain behind the glass
             float vn=max(dot(V, n), .12), ln=max(dot(L, n), .03), dep=modern>.5?.07:style>.5&&style<5.5?.22:.16;
@@ -369,8 +370,8 @@ export default function create(ctx) {
   const P = a => a.map(hex);
   const WALL = [
     P(['#e9e2d2', '#efe9dc', '#e6d6b4', '#e3cfa0', '#d9d5cc', '#e8c9b4', '#cfd6c6', '#efe4c4', '#dcd0bb', '#f1efe8', '#e7dcc0']),   // town
-    P(['#e8b84a', '#efcd6b', '#e89a86', '#da8b7c', '#a9c79c', '#9fc8b4', '#93b7d6', '#efe2c2', '#eca96a', '#f2d8a6', '#c9d9a8', '#e7b9a1', '#f1ead8']), // pastel old towns
-    P(['#e9b23d', '#f0c858', '#e8846f', '#d4685c', '#9fc58e', '#7fbfa8', '#86aed4', '#f3e3b9', '#ec9a52', '#c04d40', '#b9a3c9', '#f2a6a0', '#80a9c8']), // Mariahilf row
+    P(['#e8b84a', '#efcd6b', '#e89a86', '#da8b7c', '#b9c9a6', '#b3cbbd', '#aebfcc', '#efe2c2', '#eca96a', '#f2d8a6', '#d3d8b2', '#e7b9a1', '#f1ead8']), // pastel old towns
+    P(['#e9b23d', '#f0c858', '#e8846f', '#d4685c', '#b0c79e', '#a2c3b2', '#a5b8c8', '#f3e3b9', '#ec9a52', '#b85a48', '#d6b2ac', '#efaba2', '#a8bac6']), // Mariahilf row
     P(['#efe3c6', '#e4c27a', '#eed892', '#cdcac2', '#dcc7a3', '#e6bfa6', '#f1ede4', '#d9c58f', '#e8d4a8']),                       // Munich Altstadt
     P(['#ede6d6', '#e9e1cc', '#efe9dd', '#e5d5b8', '#dcd3c3', '#e9dcc4']),                                                         // Nuremberg plaster
     P(['#f2efe8', '#efebe2', '#ebe6da', '#f3efe4']),                                                                               // Alpine white
@@ -381,11 +382,18 @@ export default function create(ctx) {
   const ROOF_BY = [[0, 1, 4, 5, 3, 0], [0, 1, 1, 3, 4, 0], [0, 1, 3, 4, 0], [0, 1, 2, 0, 1], [0, 1, 2, 0, 2], [3, 4, 7, 1, 3, 5], [0, 1, 2, 0, 4], [5, 4, 5, 7]];
   const SHUT_P = [.15, .5, .45, .08, .2, .85, .35, 0];
   function pastel([r, g, b]) {           // a tagged facade colour as lime-washed plaster: earthy pigments, nothing neon
+    // (OSM tags are often pure web colours - 'yellow' #ffff00, 'green' #008000, 'blue', 'magenta' - which, lit, read as paint
+    // swatches; lime pigments are ochres, oxide reds, umber, a greyed green and a greyed blue, all at high value)
     const c = new THREE.Color(r / 255, g / 255, b / 255), hsl = {}; c.getHSL(hsl);
     let { h, s, l } = hsl;
-    if (h > .7 && h < .94) { h = h < .8 ? .6 : .985; s *= .55; }                        // violet / magenta -> grey-blue / old rose
-    const smax = h > .2 && h < .55 ? .3 : h >= .55 && h <= .7 ? .36 : .46;               // greens and cyans stay soft
-    c.setHSL(h, Math.min(s, smax) * (l > .9 ? .3 : 1), Math.min(.84, Math.max(.62, l * .9)));
+    if (h > .7 && h < .94) { h = h < .8 ? .6 : .985; s *= .5; }                         // violet / magenta -> grey-blue / old rose
+    if (l < .14) return null;                                                             // black: a bogus tag, use the palette
+    if (h > .115 && h < .2) h = .115 + (h - .115) * .25;                                 // lemon and acid yellows -> ochre
+    if (h > .6 && h <= .7) h = .6;                                                       // ultramarine -> a greyed blue
+    const smax = h >= .2 && h < .55 ? .2 : h >= .55 && h <= .7 ? .2 : h > .9 || h < .06 ? .42 : .5;
+    const lmin = h >= .2 && h <= .7 ? .7 : .64;                                           // greens and blues stay pale
+    s = Math.min(s, smax) * (l > .9 ? .3 : 1);
+    c.setHSL(h, s, Math.min(s < .12 ? .92 : .84, Math.max(lmin, l * .9)));
     return [c.r * 255 | 0, c.g * 255 | 0, c.b * 255 | 0];
   }
   const c565 = c => [(c >> 11) / 31 * 255, ((c >> 5) & 63) / 63 * 255, (c & 31) / 31 * 255];
@@ -526,7 +534,11 @@ export default function create(ctx) {
       if (!part && area * sx * sy < 150) G = cur.Gm;
       Gb = G;
       // ---- what kind of building is this ----
-      const cls = info & 7, style = (info >> 3) & 15, floorsD = (info >> 7) & 31, rhKnown = (info >> 12) & 1;
+      const cls = info & 7, floorsD = (info >> 7) & 31, rhKnown = (info >> 12) & 1;
+      // the Inn valley and Chiemgau lowlands (Rosenheim, Grafing) build the same farmhouses as the mountains: white ground floor,
+      // a timber upper storey with balconies, shallow roofs and wide eaves - only Munich's suburbs and the north keep plain houses
+      let style = (info >> 3) & 15;
+      if (style === 6 && lat < 48.03 && floorsD <= 3 && cls !== 4 && cls !== 5) style = 5;
       let st = (Math.abs(Math.sin(cx * 12.9898 + cy * 78.233) * 43758.5453) % 1) * 2147483646 + 1 | 0;
       const rand = () => (st = st * 16807 % 2147483647) / 2147483647;
       const seed = Math.floor(rand() * 256);
@@ -542,7 +554,7 @@ export default function create(ctx) {
       }
       const hM = eave + rh;
       const floors = floorsD || Math.max(1, Math.round((eave - .6) / 3.15));
-      const timber = cls === 6 || (style === 4 && floors <= 5 && area < 900 && rand() < .5) || (style === 5 && !util && rand() < (area * sx * sy < 300 ? .55 : .3)) || (style === 6 && lat > 49.05 && rand() < .3);
+      const timber = cls === 6 || (style === 4 && floors <= 5 && area < 900 && rand() < .5) || (style === 5 && !util && rand() < (area * sx * sy < 300 ? .75 : .45)) || (style === 6 && lat > 49.05 && rand() < .3);
       const balcony = !util && !church && !part && (style === 5 && rand() < .62 || style === 6 && lat < 48.05 && rand() < .35);
       const shutters = !util && !modern && !church && rand() < SHUT_P[style];
       const quoins = !util && !church && ((style === 1 || style === 3) && (area > 300 || cls === 7) && rand() < .5 || style === 0 && cls === 7 && rand() < .4 || style === 4 && !timber && rand() < .35);   // style 4: all sandstone
@@ -551,7 +563,7 @@ export default function create(ctx) {
       const pal = WALL[church ? 5 : style];
       let wall = pal[Math.floor(rand() * pal.length)].slice();
       if (church) wall = style === 4 ? hex(rand() < .5 ? '#b5735a' : '#a8664f') : rand() < .5 ? hex('#eeeae0') : hex('#efe6cf');   // Nuremberg's churches are red sandstone
-      if (wallC && !church) wall = pastel(c565(wallC));
+      if (wallC && !church) wall = pastel(c565(wallC)) || wall;
       if (timber && style === 4) wall = hex('#ece6d8');
       const jit = .94 + .1 * rand(); wall = wall.map(v => Math.min(255, Math.round(v * jit)));
       const rset = ROOF_BY[style];
@@ -888,9 +900,10 @@ export default function create(ctx) {
       pts.userData.far = SMOKE_FAR; pts.userData.wc = g.boundingSphere.center.clone().add(o);
       root.add(pts); smokes.push(pts);
     }
+    master.uniforms.uShadow.value = shadowTex();      // set after the chunk materials were cloned (cloning a texture uniform copies it)
     root.userData.chunks = list; root.userData.smoke = smokes;
     const gd = root.geometry.dispose.bind(root.geometry);
-    root.geometry.dispose = () => { for (const m of list.concat(smokes)) { m.geometry.dispose(); m.material.dispose(); } gd(); };
+    root.geometry.dispose = () => { for (const m of list.concat(smokes)) { m.geometry.dispose(); m.material.dispose(); } master.dispose(); gd(); if (sMesh === root) sMesh = null; };
     return root;
   }
 
@@ -922,6 +935,24 @@ export default function create(ctx) {
     }
     recvGeo.attributes.position.needsUpdate = true; recv.position.copy(o); recv.updateMatrixWorld();
   }
+  // The shadow map exists (allocated and cleared to 'all lit') before any building is drawn, and every pack's material
+  // samples it from the start: a sampler2DShadow left null gets three's never-uploaded placeholder, which WebGL reports as
+  // 'Mismatch between texture format and sampler type' on every draw.
+  function shadowTex() {
+    if (!SHADOWS) return null;
+    if (!srt) {
+      srt = new THREE.WebGLRenderTarget(SM, SM, { depthBuffer: true, stencilBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false });
+      srt.depthTexture = new THREE.DepthTexture(SM, SM, THREE.UnsignedIntType);
+      srt.depthTexture.format = THREE.DepthFormat;
+      srt.depthTexture.compareFunction = THREE.LessEqualCompare;
+      srt.depthTexture.minFilter = srt.depthTexture.magFilter = THREE.LinearFilter;
+      scam = new THREE.OrthographicCamera(-1, 1, 1, -1, .05, 12); scam.layers.set(SHADOW_LAYER);
+      const prev = renderer.getRenderTarget();
+      renderer.setRenderTarget(srt); renderer.clear(true, true, false); renderer.setRenderTarget(prev);
+      recvMat.uniforms.uShadow.value = srt.depthTexture;
+    }
+    return srt.depthTexture;
+  }
   const camL = new V3();
   function update(dt) {
     const mesh = ctx.state.packMesh, mine = mesh && mesh.userData.chunks;
@@ -930,6 +961,7 @@ export default function create(ctx) {
       for (const L of [mesh.userData.chunks, mesh.userData.smoke]) for (const c of L) c.visible = c.userData.wc.distanceTo(camL) < c.userData.far + c.geometry.boundingSphere.radius;
     }
     if (!SHADOWS) return;
+    if (mine && mesh.material.uniforms.uShadow.value !== shadowTex()) mesh.material.uniforms.uShadow.value = srt.depthTexture;
     const want = mine && mesh.visible && !ctx.city && cam.dist < 4.5 ? 1 : 0;
     sOn += (want - sOn) * Math.min(1, dt * 3);
     const on = mine && srt ? sOn * mesh.material.uniforms.uFade.value : 0;
@@ -939,13 +971,6 @@ export default function create(ctx) {
     if (!want) return;
     const half = clamp(cam.dist * 1.35, .45, 3), T = cam.target;
     if (mesh === sMesh && T.distanceTo(sCentre) < half * .15 && Math.abs(half / sHalf - 1) < .3) return;
-    if (!srt) {
-      srt = new THREE.WebGLRenderTarget(SM, SM, { depthBuffer: true, stencilBuffer: false });
-      srt.depthTexture = new THREE.DepthTexture(SM, SM, THREE.UnsignedIntType);
-      srt.depthTexture.compareFunction = THREE.LessEqualCompare;
-      srt.depthTexture.minFilter = srt.depthTexture.magFilter = THREE.LinearFilter;
-      scam = new THREE.OrthographicCamera(-1, 1, 1, -1, .05, 12); scam.layers.set(SHADOW_LAYER);
-    }
     sMesh = mesh; sCentre.copy(T); sHalf = half;
     scam.left = scam.bottom = -half; scam.right = scam.top = half; scam.updateProjectionMatrix();
     scam.position.copy(T).addScaledVector(uni.uRegionSun.value, 6); scam.up.copy(T).normalize(); scam.lookAt(T); scam.updateMatrixWorld();

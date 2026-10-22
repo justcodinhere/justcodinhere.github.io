@@ -1,7 +1,8 @@
 // Signs of life: jackdaws and alpine choughs wheeling over the towns, castles and peaks (now and then a flock sweeps
 // past the camera), thin smoke from a sampling of old-town chimneys, Christmas-market huts with warm fronts, garlands
 // and light strands on the real market streets, big lit trees at Marienplatz and the Goldenes Dachl, ducks and swans
-// resting by the banks, and a light flurry around the camera in winter close-ups.
+// resting by the banks, and a light flurry around the camera in winter close-ups. The market huts are open until the
+// markets close for Christmas (from Dec 24 on only the trees and street lights remain).
 // Placements (assets/life/life.json) were made offline from Overture footprints, streets and water polygons.
 // create(ctx) returns { update(dt, alt), onPack(name), onStep(step), onCity(on) }.
 export default function create(ctx) {
@@ -178,7 +179,7 @@ export default function create(ctx) {
         float px=aS.x*.001*uFocal/max(d,.01);
         float tw=1.-uTw*.6*smoothstep(.6,1.,sin(uTime*(1.1+aS.y*2.3)+aS.y*71.));
         gl_PointSize=clamp(px*3.,2.6,18.);
-        vCol=aCol*tw*clamp(px*1.6,.6,1.)*uShow*(1.-smoothstep(5.,8.,d));
+        vCol=aCol*tw*clamp(px*1.6,.32,1.)*uShow*(1.-smoothstep(4.,7.,d));     // sub-pixel bulbs dim to a soft glow, not glitter
         gl_Position=projectionMatrix*mv; }`,
     fragmentShader: `varying vec3 vCol; void main(){ vec2 q=gl_PointCoord*2.-1.; float r=dot(q,q); if(r>1.) discard;
         float core=exp(-r*10.), halo=exp(-r*3.2)*(1.-r);
@@ -195,7 +196,7 @@ export default function create(ctx) {
   const WARM = [1, .36, .09], GOLD = [1, .58, .14], BULB = [1, .47, .13], RED = [1, .1, .05];
 
   /* ---------- Christmas markets ---------- */
-  const markets = [];                        // { tag, group, origin }
+  const markets = [];                        // { tag, group, stalls, origin }
   function buildMarkets() {
     const tags = new Map();
     const of = tag => { if (!tags.has(tag)) tags.set(tag, { huts: [], trees: [], strands: [] }); return tags.get(tag); };
@@ -203,7 +204,8 @@ export default function create(ctx) {
     for (const t of data.trees) of(t[3]).trees.push(t);
     for (const s of data.strands) of(s[2]).strands.push(s);
     for (const [tag, T] of tags) {
-      const [la0, lo0] = T.huts[0] || T.trees[0] || T.strands[0][0], origin = llv(la0, lo0, meshKm(la0, lo0)), group = new THREE.Group(), lights = [];
+      const [la0, lo0] = T.huts[0] || T.trees[0] || T.strands[0][0], origin = llv(la0, lo0, meshKm(la0, lo0)), group = new THREE.Group(), lights = [], stallLights = [];
+      const stalls = new THREE.Group(); group.add(stalls);      // the huts, their shoppers and bulbs: gone once the market closes
       group.position.copy(origin); const mat = matAt(origin);
       const huts = new THREE.InstancedMesh(hutGeo, mat, T.huts.length), vars = new Float32Array(T.huts.length);
       const K = .0015;                       // 1.5x so they read from a few hundred metres up
@@ -213,12 +215,12 @@ export default function create(ctx) {
         huts.setMatrixAt(i, m4); vars[i] = rnd();
         for (let k = 0; k < (lite ? 2 : 4); k++) {              // bulbs along the front eave
           const x = lerp(-1.45, 1.45, (k + .5) / (lite ? 2 : 4));
-          lights.push([tmp2.copy(p).addScaledVector(AX, x * K).addScaledVector(AY, 2.12 * K).addScaledVector(AZ, 1.66 * K).clone(), BULB, .55]);
+          stallLights.push([tmp2.copy(p).addScaledVector(AX, x * K).addScaledVector(AY, 2.12 * K).addScaledVector(AZ, 1.66 * K).clone(), BULB, .55]);
         }
-        lights.push([tmp2.copy(p).addScaledVector(AY, 1.4 * K).addScaledVector(AZ, 1.5 * K).clone(), WARM, 1.6]);   // glow spilling from the counter
+        stallLights.push([tmp2.copy(p).addScaledVector(AY, 1.4 * K).addScaledVector(AZ, 1.5 * K).clone(), WARM, 1.6]);   // glow spilling from the counter
       });
       huts.geometry = hutGeo.clone(); huts.geometry.setAttribute('aVar', new THREE.InstancedBufferAttribute(vars, 1));
-      huts.frustumCulled = false; if (T.huts.length) group.add(huts, crowd(T.huts, origin));
+      huts.frustumCulled = false; if (T.huts.length) stalls.add(huts, crowd(T.huts, origin), lightsMesh(stallLights, origin));
       if (T.trees.length) {
         const trees = new THREE.InstancedMesh(treeGeo.clone(), mat, T.trees.length), tv = new Float32Array(T.trees.length);
         T.trees.forEach(([la, lo, h], i) => {
@@ -241,8 +243,8 @@ export default function create(ctx) {
         const len = pa.distanceTo(pb) * 1000, n = Math.max(4, Math.round(len / (lite ? 1.6 : .9)));
         for (let k = 0; k <= n; k++) { const f = k / n; lights.push([pa.clone().lerp(pb, f).addScaledVector(up, -.0012 * 4 * f * (1 - f)), BULB, .45]); }
       }
-      group.add(lightsMesh(lights, origin));
-      root.add(group); markets.push({ tag, group, origin });
+      if (lights.length) group.add(lightsMesh(lights, origin));
+      root.add(group); markets.push({ tag, group, stalls, origin });
     }
   }
 
@@ -273,7 +275,7 @@ export default function create(ctx) {
   const smokeMat = new THREE.ShaderMaterial({
     uniforms: { ...uni, uT: { value: 37 }, uUp: { value: new V3(0, 1, 0) }, uWind: { value: new V3(1, 0, 0) }, uShow: { value: 0 }, uK: { value: .0017 } },
     transparent: true, depthWrite: false,
-    vertexShader: `attribute vec3 aBase; attribute vec4 aP; uniform float uT, uShow, uK; uniform vec3 uUp, uWind; varying vec2 vUv; varying float vAge, vA, vSeed;
+    vertexShader: `attribute vec3 aBase; attribute vec4 aP; uniform float uT, uShow, uK; uniform vec3 uUp, uWind; varying vec2 vUv; varying float vAge, vA, vSeed, vD;
       void main(){
         float age=fract(uT/aP.w+aP.x), k=uK*clamp(sqrt(-(modelViewMatrix*vec4(aBase,1.)).z/.3),1.,1.7);   // widen a little from afar so a plume still reads
         vec3 side=normalize(cross(uUp,uWind));
@@ -281,22 +283,23 @@ export default function create(ctx) {
         vec3 c=aBase+uUp*(.6+19.*pow(age,.75))*k+uWind*(.3+16.*age*age)*k+side*sw*(.4+3.*age)*k;
         // direction the puff is travelling, so each one is drawn as a streak along the plume
         vec3 dc=uUp*14.*pow(age+.02,-.25)+uWind*32.*age+side*sw*3.;
-        float size=(.6+5.*pow(age,.6))*k*(.8+.45*aP.z), st=mix(2.2,1.25,smoothstep(0.,.7,age));
+        float size=(.45+2.6*pow(age,.6))*k*(.8+.4*aP.z), st=mix(2.,1.3,smoothstep(0.,.7,age));     // a thin wisp a few metres across, not a cloud
         vec4 mv=modelViewMatrix*vec4(c,1.);
         vec2 ax=(modelViewMatrix*vec4(dc,0.)).xy; ax=length(ax)>1e-6?normalize(ax):vec2(0.,1.);
         mv.xy+=(vec2(ax.y,-ax.x)*position.x+ax*position.y*st)*size;
-        vUv=position.xy; vAge=age; vSeed=aP.z;
-        vA=aP.y*smoothstep(0.,.05,age)*pow(1.-age,2.1)*uShow*(1.-smoothstep(3.5,7.,-mv.z));
-        gl_Position=projectionMatrix*mv; }`,
-    fragmentShader: NOISE + LIGHT + `uniform vec3 uUp, uRegionSun; varying vec2 vUv; varying float vAge, vA, vSeed;
+        vUv=position.xy; vAge=age; vSeed=aP.z; vD=length(mv.xyz);
+        vA=aP.y*smoothstep(0.,.05,age)*pow(1.-age,2.1)*uShow*(1.-smoothstep(2.,4.5,-mv.z))*smoothstep(.012,.04,-mv.z);   // and thins out right at the lens: no grey veil, no big overdraw
+        gl_Position=vA<.003?vec4(0.,0.,2.,1.):projectionMatrix*mv; }`,
+    fragmentShader: NOISE + HAZE + LIGHT + `uniform vec3 uUp, uRegionSun; uniform float uAlt; varying vec2 vUv; varying float vAge, vA, vSeed, vD;
       void main(){
         float r=length(vUv); if(r>1.||vA<.003) discard;
         float n=vnoise(vec3(vUv*2.3+vSeed*17.,vAge*2.5+vSeed*5.))*.65+vnoise(vec3(vUv*5.1-vSeed*9.,vAge*3.5))*.35;
-        float a=min(.75,clamp((1.-smoothstep(.05,1.,r))*(.3+1.2*n)-.1,0.,1.)*vA*mix(1.5,.75,vAge));
+        float a=min(.42,clamp((1.-smoothstep(.05,1.,r))*(.3+1.2*n)-.1,0.,1.)*vA*mix(.95,.5,vAge));
         vec3 nv=vec3(vUv,sqrt(max(0.,1.-r*r))), nw=normalize((vec4(nv,0.)*viewMatrix).xyz);
-        // thick wood smoke is a warm grey-brown at the stack, thinning to blue-grey: kept well below the snow's brightness
-        vec3 tone=mix(vec3(.15,.145,.14),mix(vec3(.22,.235,.27),vec3(.36,.39,.45),smoothstep(.3,.9,vAge)),smoothstep(0.,.25,vAge));
-        vec3 col=tone*winterLight(nw,uUp,normalize(uRegionSun))*(.9+.2*n);
+        // wood smoke on a cold day: a soft grey at the stack, at once thinning to a pale blue-grey that lifts off the sky
+        // rather than staining it, still a step below the snow's brightness
+        vec3 tone=mix(vec3(.34,.33,.32),mix(vec3(.52,.55,.6),vec3(.66,.7,.77),smoothstep(.3,.9,vAge)),smoothstep(0.,.2,vAge));
+        vec3 col=applyHaze(tone*winterLight(nw,uUp,normalize(uRegionSun))*(.9+.2*n),vD,uAlt);     // hazed like the roofs below it, never a dark blot on the sky
         gl_FragColor=vec4(col,a);` + END + `}`,
   });
   let smoke = null, chims = null;
@@ -332,7 +335,7 @@ export default function create(ctx) {
   function birdGeometry() {
     const P = [], W = [], push = (w, ...pts) => { for (const p of pts) { P.push(...p); W.push(w); } };
     // body: a little diamond with depth, so a bird seen side-on is still a dash rather than a hairline
-    const nose = [0, .01, .25], L = [-.05, 0, .03], Rr = [.05, 0, .03], T = [0, .05, -.01], B = [0, -.04, .0], tail = [0, .005, -.16];
+    const nose = [0, .01, .25], L = [-.055, 0, .03], Rr = [.055, 0, .03], T = [0, .065, -.01], B = [0, -.055, .0], tail = [0, .005, -.16];
     push(0, nose, L, T, nose, T, Rr, nose, B, L, nose, Rr, B, L, tail, T, T, tail, Rr, L, B, tail, B, Rr, tail);
     push(0, [0, .005, -.12], [-.075, 0, -.34], [.075, 0, -.34]);
     for (const s of [-1, 1]) {
@@ -401,11 +404,13 @@ export default function create(ctx) {
   };
   // Where flocks live: lat, lon, kind, birds, circling radius m, height above the ground m. Choughs come down to Innsbruck in winter.
   const HOMES = [
-    [47.2690, 11.3928, 'chough', 18, 220, 95], [47.2712, 11.3885, 'crow', 9, 170, 70], [47.3125, 11.3864, 'chough', 14, 190, 70],
-    [47.2490, 11.3995, 'chough', 8, 150, 80], [48.1382, 11.5742, 'jackdaw', 20, 230, 135], [48.1300, 11.5834, 'crow', 9, 190, 60],
-    [49.4577, 11.0760, 'jackdaw', 18, 170, 85], [49.4535, 11.0782, 'jackdaw', 10, 210, 95], [47.5578, 10.7495, 'chough', 14, 170, 90],
-    [47.5553, 10.7364, 'jackdaw', 8, 130, 70], [47.5836, 12.1706, 'jackdaw', 12, 160, 80], [47.4383, 11.8933, 'jackdaw', 9, 130, 75],
-    [47.2833, 11.5083, 'jackdaw', 8, 140, 65], [47.5695, 10.7003, 'jackdaw', 10, 160, 75], [47.3500, 11.7083, 'jackdaw', 8, 140, 65],
+    // heights clear the tallest towers in each circle as drawn (x1.3): Innsbruck's cathedral, the Frauenkirche, St Sebald, the castles,
+    // the church towers of Hall and Schwaz and the Bergisel jump; flocks by a castle rock (Kufstein, Rattenberg) circle above the keep
+    [47.2690, 11.3928, 'chough', 18, 220, 125], [47.2712, 11.3885, 'crow', 9, 170, 85], [47.3125, 11.3864, 'chough', 14, 190, 70],
+    [47.2490, 11.3995, 'chough', 8, 150, 110], [48.1382, 11.5742, 'jackdaw', 20, 230, 172], [48.1300, 11.5834, 'crow', 9, 190, 108],
+    [49.4577, 11.0760, 'jackdaw', 18, 170, 95], [49.4535, 11.0782, 'jackdaw', 10, 210, 138], [47.5578, 10.7495, 'chough', 14, 170, 140],
+    [47.5553, 10.7364, 'jackdaw', 8, 130, 88], [47.5836, 12.1706, 'jackdaw', 12, 160, 140], [47.4383, 11.8933, 'jackdaw', 9, 130, 105],
+    [47.2833, 11.5083, 'jackdaw', 8, 140, 100], [47.5695, 10.7003, 'jackdaw', 10, 160, 85], [47.3500, 11.7083, 'jackdaw', 8, 140, 112],
   ].map(([lat, lon, kind, n, r, h]) => ({ lat, lon, kind: KIND[kind], n: lite ? Math.ceil(n * .55) : n, r: r / 1000, h: h / 1000, flock: null }));
   function frameAt(p) { const f = enu(p), n = p.clone().normalize(); return { o: p.clone(), ...f, lat: Math.asin(n.y) / D2R, lon: Math.atan2(n.x, n.z) / D2R }; }
   function makeFlock(F, kind, n, path) {
@@ -419,7 +424,7 @@ export default function create(ctx) {
   // A home flock wheels around its home on a slowly wandering loop; a sweep follows a curve across the view, then leaves.
   function homePath(H) {
     const rx = H.r * (.8 + rnd() * .4), ry = H.r * (.7 + rnd() * .4), r2 = H.r * .3, w = H.kind.v * 1.4 / H.r, p1 = rnd() * 6.3, p2 = rnd() * 6.3, p3 = rnd() * 6.3;
-    return (t, o) => { const a = w * t + p1; o.set(rx * Math.cos(a) + r2 * Math.cos(2.1 * a + p2), ry * Math.sin(a) + r2 * Math.sin(1.6 * a + p2), H.h + .03 * Math.sin(.7 * a + p3)); return o; };
+    return (t, o) => { const a = w * t + p1; o.set(rx * Math.cos(a) + r2 * Math.cos(2.1 * a + p2), ry * Math.sin(a) + r2 * Math.sin(1.6 * a + p2), H.h + .014 * Math.sin(.7 * a + p3)); return o; };
   }
   const flocks = [];
   let sweepIn = 6 + rnd() * 6, X = 2;
@@ -450,7 +455,7 @@ export default function create(ctx) {
     o.y += s * (Math.sin(f[1] * t + ph[1]) + .4 * Math.sin(1.9 * f[1] * t + ph[2]));
     o.z += s * .45 * Math.sin(f[2] * t + ph[2]);
     const lat = fl.F.lat + o.y / 110.57, lon = fl.F.lon + o.x / (111.32 * Math.cos(fl.F.lat * D2R)), gz = terrainKm(lat, lon) - fl.g0 + .03;
-    if (o.z < gz) o.z = gz + (o.z - gz) * .2;
+    if (o.z < gz) o.z = gz - .02 * (1 - Math.exp((o.z - gz) / .02));     // a soft floor: never closer than ~10 m to the slope, however deep the path dips
     return o;
   }
   function updateBirds(dt) {
@@ -480,7 +485,8 @@ export default function create(ctx) {
         const aw = tmp.copy(F.east).multiplyScalar(acc.x).addScaledVector(F.north, acc.y);
         aw.addScaledVector(Fw, -aw.dot(Fw));
         Up.copy(F.up).multiplyScalar(.0098).addScaledVector(aw, 1.6); Up.addScaledVector(Fw, -Up.dot(Fw)).normalize();
-        const dc = wp.distanceTo(camera.position), span = clamp(Math.max(fl.kind.span * X * (fl.sweep ? 1.4 : 1), dc * 1000 * .0088), fl.kind.span * 1.5, fl.kind.span * 11) * .001 * fl.w;
+        const dc = wp.distanceTo(camera.position), sp = clamp(Math.max(fl.kind.span * X * (fl.sweep ? 1.4 : 1), dc * 1000 * .0078), fl.kind.span * 1.5, fl.kind.span * 9) * .001;
+        const span = sp * fl.w * smooth(.9, 2.2, sp * uni.uFocal.value / Math.max(dc, 1e-3));   // birds too far to cover a couple of pixels fade out rather than flicker as specks
         AX.crossVectors(Up, Fw).normalize().multiplyScalar(span); AY.crossVectors(Fw, AX).normalize().multiplyScalar(span); AZ.copy(Fw).multiplyScalar(span);
         m4.makeBasis(AX, AY, AZ); m4.setPosition(wp.sub(origin)); birds.setMatrixAt(k, m4);
         // flap in bursts, glide between them (choughs glide most)
@@ -607,10 +613,10 @@ export default function create(ctx) {
     root.visible = !cityOn && !ctx.city;
     if (!root.visible) return;
     const T = ctx.cam.target, d = ctx.cam.dist, cp = camera.position;
-    for (const m of markets) m.group.visible = d < 12 && cp.distanceTo(m.origin) < 9 && (before24 || m.tag !== 'muc' && m.tag !== 'ibkm');
-    lightMat.uniforms.uShow.value = 1 - smooth(6, 11, d); if (!reduceMotion) crowdMat.uniforms.uT.value = ctx.time;
+    for (const m of markets) { m.group.visible = d < 12 && cp.distanceTo(m.origin) < 9; m.stalls.visible = before24; }
+    lightMat.uniforms.uShow.value = 1 - smooth(4.5, 9, d); if (!reduceMotion) crowdMat.uniforms.uT.value = ctx.time;
     if (smoke) {                              // plumes span a whole leg's towns; each puff fades with its own distance
-      const s = (1 - smooth(5, 9, d)) * ctx.winter; smokeMat.uniforms.uShow.value = s; if (!reduceMotion) smokeMat.uniforms.uT.value = ctx.time;
+      const s = (1 - smooth(3, 5.5, d)) * ctx.winter; smokeMat.uniforms.uShow.value = s; if (!reduceMotion) smokeMat.uniforms.uT.value = ctx.time;
       smoke.visible = s > .01; chims.visible = d < 9;
     }
     anchor(T);
@@ -619,7 +625,8 @@ export default function create(ctx) {
   return {
     update,
     onPack(name) { pack = name; if (fowlList) for (const f of fowlList) f.v = null; scan = null; scanAt = -1; },
-    // Munich's market closes on Christmas Eve (and Innsbruck's Marktplatz one may too); the old-town market in Innsbruck runs to Epiphany
+    // The markets close for Christmas: Munich's on Christmas Eve, Innsbruck's old-town and Marktplatz ones after Dec 23.
+    // From Christmas Eve on the huts and shoppers are gone; the big trees and the street lights stay up into January.
     onStep(step) { before24 = !/^(day([5-9]|10)|home)/.test(step && step.id || ''); },
     onCity(on) { cityOn = !!on; root.visible = !cityOn; },
     _dbg: { sweep: () => { sweepIn = 0; }, flocks, markets, get smoke() { return smoke; } },

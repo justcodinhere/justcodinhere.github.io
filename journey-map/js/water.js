@@ -82,9 +82,9 @@ export default function create(ctx) {
       vec4 mv=viewMatrix*vec4((modelMatrix*vec4(position,1.)).xyz,1.); float d=length(mv.xyz);
       mv.xyz*=max(1.-(uPull+.0004*d)/max(d,.02),.5); gl_Position=projectionMatrix*mv; }`;
   // vA: shore distance m, unit direction to the nearest shore (east, north), height of what stands on that bank (drawn m)
-  // vB: flow m/s (east, north), turbulence 0..1, ice width m (255 = frozen over; 1 marks a river reach through town)   vE: cut fade, horizon row, -, bank kind (0 snow, 1 houses, 2 trees)
+  // vB: flow m/s (east, north), turbulence 0..1, ice width m (255 = frozen over; 1 marks a river reach through town)   vE: cut fade, -, -, bank kind (0 snow, 1 houses, 2 trees)
   const FS = NOISE + HAZE + LIGHT + `
-    uniform sampler2D uRip, uHz; uniform vec3 uOrigin, uEast, uNorth, uRegionSun; uniform float uTime, uAlt, uWinter, uFade, uQ;
+    uniform sampler2D uRip, uHz; uniform vec3 uOrigin, uEast, uNorth, uRegionSun; uniform vec4 uHzG; uniform float uTime, uAlt, uWinter, uFade, uQ, uHzS;
     varying vec3 vL, vCol, vBank; varying vec2 vXY; varying vec4 vA, vB, vE;
     vec3 skyCol(float s){ return mix(vec3(.70,.75,.82), vec3(.36,.48,.66), smoothstep(0.,.75,s)); }   // pale winter sky, bluer overhead
     void main(){
@@ -92,6 +92,10 @@ export default function create(ctx) {
       vec3 L=normalize(uRegionSun), lit=winterLight(up,up,L);
       float shore=vA.x, bankH=vA.w, turb=vB.z, iceW=vB.w; vec2 sdir=vA.yz, flow=vB.xy, p=vXY;
       float spd=length(flow), mpp=max(length(fwidth(p)),.02);                      // metres per pixel here
+      // shoreline anti-aliasing: a distance field changes at most a metre per metre, so cap its screen rate at mpp (sliver
+      // triangles with a steep interpolated gradient otherwise faded to nothing: pale slashes across the river from afar)
+      float a=smoothstep(0.,max(1.6,min(fwidth(shore),mpp)*1.5),shore)*vE.x*uFade*(1.-smoothstep(${NEAR}.,${FAR}.,dist));
+      if(a<.004) discard;                                                            // before any texture work
       float lodA=1.-smoothstep(.7,2.4,mpp), lodB=(1.-smoothstep(.18,.6,mpp))*uQ;   // drop ripples that would only alias
       vec2 fd=spd>.01?flow/spd:vec2(0.);
       // flow mapping: two phases half a cycle apart, cross-faded so their resets never show
@@ -117,7 +121,8 @@ export default function create(ctx) {
       vec3 r=reflect(-V,n); float sE=dot(r,up);
       if(sE<.01){ r=normalize(r+up*(.01-sE)); sE=.01; }
       float az=atan(dot(r,uEast),dot(r,uNorth)), E=asin(clamp(sE,0.,1.));
-      float ridge=max(texture2D(uHz,vec2(az/6.28318+.5,vE.y)).r*.8,.035+.02*vnoise(vec3(az*23.,4.,1.)))*(.94+.12*vnoise(vec3(az*9.,1.,2.)));
+      vec2 hc=clamp(floor((p+uHzG.xy)/uHzS),vec2(0.),uHzG.zw-1.);
+      float ridge=max(texture2D(uHz,vec2(az/6.28318+.5,(hc.y*uHzG.z+hc.x+.5)/(uHzG.z*uHzG.w))).r*.8,.035+.02*vnoise(vec3(az*23.,4.,1.)))*(.94+.12*vnoise(vec3(az*9.,1.,2.)));
       float tt=clamp(E/max(ridge,.02),0.,1.), rock=vnoise(vec3(az*34.,tt*4.,3.));
       vec3 mtn=mix(vec3(.03,.05,.04), mix(vec3(.2,.23,.19), vec3(.66,.70,.76)*(.8+.35*rock), uWinter), smoothstep(.22,.62,tt+.2*(rock-.5)));
       mtn=mix(mtn*lit, vec3(.70,.75,.82), .3);
@@ -134,11 +139,13 @@ export default function create(ctx) {
         facade*=1.-.5*smoothstep(.45,.6,fract(hr/4.1))*step(.12,th)*step(th,.8);   // rows of dark windows
         vec3 house=mix(facade, mix(vec3(.22,.1,.07),vec3(.72,.75,.8),uWinter*.8), smoothstep(.8,.86,th))*mix(.3,1.,smoothstep(0.,.12,th));
         vec3 tree=mix(vec3(.03,.05,.04), vec3(.5,.55,.6), uWinter*.35*step(.62,jag));
-        vec3 bankS=mix(vec3(.08,.08,.075), vec3(.78,.81,.86)*lit, smoothstep(.25,.5,th));
+        vec3 bankS=mix(vec3(.08,.08,.075), mix(vec3(.2,.23,.15),vec3(.78,.81,.86),uWinter)*lit, smoothstep(.25,.5,th));   // snowy bank, grass without winter
         env=mix(env, house*wH+tree*wT+bankS*wS, hit);
       }
       float cv=max(dot(n,V),0.), F=.02+.98*pow(1.-cv,4.5);
-      vec3 body=vCol*lit*.84*mix(1.15,.92,smoothstep(0.,25.,shore))*(.93+.14*M.b);
+      float town=1.-step(.5,abs(iceW-1.));                                           // a reach through town: deep right up to the quay
+      vec3 body=vCol*lit*.74*mix(mix(1.1,1.,town),.95,smoothstep(0.,25.,shore))*(.94+.12*M.b);
+      body=mix(vec3(dot(body,vec3(.25,.6,.15))),body,.8);                            // a grey winter sky mutes the summer turquoise
       vec3 col=mix(body, env, F*(.9+.2*(1.-patchy)));
       float sp=max(dot(r,L),0.), ex=mix(1400.,90.,clamp(sub*3.5,0.,1.));
       col+=vec3(1.,.92,.8)*(pow(sp,ex)*ex*.005+pow(sp,30.)*.08)*(.55+.45*patchy);
@@ -148,10 +155,10 @@ export default function create(ctx) {
         float fm0=0., fm1=0.;
         for(int k=0;k<FOAM_TAPS;k++){ vec2 q=p-fd*float(k)*(24./float(FOAM_TAPS)); fm0+=texture2D(uRip,(q-o0)/95.+.11).b; fm1+=texture2D(uRip,(q-o1)/95.+.59).b; }
         float fm=mix(fm0,fm1,w1)/float(FOAM_TAPS), bankF=1.-smoothstep(.5,10.,shore);
-        float amt=clamp(turb*(.5+.9*bankF)*(.35+1.2*patchy),0.,1.);
-        float foam=smoothstep(.6-amt*.32,.86-amt*.32,fm)*min(amt*1.3,1.);           // streaks of white water along the current
-        foam=max(foam, (1.-smoothstep(.4,3.5,shore))*smoothstep(.35,.65,fm)*turb*.8);  // lace where the current scrapes the bank
-        col=mix(col, vec3(.82,.86,.9)*lit, clamp(foam*1.3,0.,.8)*mix(.55,1.,lodA));
+        float amt=clamp(turb*(.3+.8*bankF)*(.3+patchy),0.,1.);
+        float foam=smoothstep(.62-amt*.28,.95-amt*.28,fm)*min(amt*1.2,1.);          // soft streaks of white water along the current
+        foam=max(foam, (1.-smoothstep(.4,3.,shore))*smoothstep(.4,.7,fm)*turb*.6);    // lace where the current scrapes the bank
+        col=mix(col, vec3(.74,.79,.83)*lit, clamp(foam,0.,.6)*mix(.5,1.,lodA));
       }
       // ice on still water in winter: snow-dusted from the shore out, a darker band of new ice at its edge
       if(iceW>1.5 && uWinter>.01){
@@ -161,8 +168,6 @@ export default function create(ctx) {
         float rim=smoothstep(.05,.3,ice)*(1.-smoothstep(.3,.75,ice));                                     // dark new ice at the open edge
         col=mix(mix(col, vec3(.2,.25,.28)*lit, rim*.5), iceC, smoothstep(.45,.85,ice));
       }
-      float a=smoothstep(0.,max(1.6,fwidth(shore)*1.5),shore)*vE.x*uFade*(1.-smoothstep(${NEAR}.,${FAR}.,dist));
-      if(a<.004) discard;
       col=applyHaze(col,dist,uAlt);
       gl_FragColor=vec4(col,a);
   #include <tonemapping_fragment>
@@ -171,7 +176,7 @@ export default function create(ctx) {
   function surfaceMat(origin, hz, f) {
     return new THREE.ShaderMaterial({
       uniforms: { ...uni, uRip: { value: rip }, uHz: { value: hz }, uOrigin: { value: origin.clone() }, uEast: { value: f.east }, uNorth: { value: f.north },
-        uFade: { value: 0 }, uQ: { value: lite ? .7 : 1 }, uPull: { value: .011 } },
+        uFade: { value: 0 }, uQ: { value: lite ? .7 : 1 }, uPull: { value: .011 }, uHzG: { value: hz.userData.grid }, uHzS: { value: hz.userData.cs } },
       vertexShader: VS, fragmentShader: FS, transparent: true, depthWrite: true,
       defines: { ...(lite ? { LITE: 1, FOAM_TAPS: 2 } : { FOAM_TAPS: 4 }), FLOWK: ctx.reduceMotion ? '.35' : '1.' },
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4,
@@ -301,7 +306,7 @@ export default function create(ctx) {
     for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
     const { kx, ky, ox, oy } = J, NA = J.attrs;
     let NV = 0, NT = 0; for (const c of J.chunks) { NV += c.nv; NT += c.nt; }
-    const X = new Float64Array(NV), Y = new Float64Array(NV), at = new Uint8Array(NV * NA), idx = new Uint32Array(NT * 3);
+    let X = new Float64Array(NV), Y = new Float64Array(NV), at = new Uint8Array(NV * NA), idx = new Uint32Array(NT * 3);
     let v0 = 0, t0 = 0;
     for (const c of J.chunks) {
       const q = new Int16Array(buf.buffer, c.off, c.nv * 2), f = new Uint16Array(buf.buffer, c.off + c.nv * 4, c.nt * 3);
@@ -310,6 +315,7 @@ export default function create(ctx) {
       for (let i = 0; i < c.nt * 3; i++) idx[t0 * 3 + i] = f[i] + v0;
       v0 += c.nv; t0 += c.nt;
     }
+    for (let pass = 0; pass < 3; pass++) { const r = splitCrossings(X, Y, at, idx, NV, NT, NA); if (!r) break; ({ X, Y, at, idx, NV, NT } = r); }
     await new Promise(r => setTimeout(r, 0));
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (let i = 0; i < NV; i++) { x0 = Math.min(x0, X[i]); x1 = Math.max(x1, X[i]); y0 = Math.min(y0, Y[i]); y1 = Math.max(y1, Y[i]); }
@@ -342,15 +348,17 @@ export default function create(ctx) {
       if (dev > 0) { dev = Math.min(dev * 1.15, .012); raise[a] = Math.max(raise[a], dev); raise[b] = Math.max(raise[b], dev); raise[c] = Math.max(raise[c], dev); }
     }
     for (let i = 0; i < NV; i++) lvl[i] += raise[i];
-    // skyline: horizon elevation in 32 directions for each 1.5 km cell of water
+    // skyline: horizon elevation in 32 directions for each ~1.5 km cell of water, stored as a regular grid of rows so the
+    // fragment finds its own cell (interpolating a per-vertex row index swept unrelated skylines across boundary triangles)
+    let CS = 1500, gx0, gy0, GX, GY;
+    for (;;) { gx0 = Math.floor(x0 / CS); gy0 = Math.floor(y0 / CS); GX = Math.floor(x1 / CS) - gx0 + 1; GY = Math.floor(y1 / CS) - gy0 + 1; if (GX * GY <= 4096) break; CS *= 1.25; }
     const AZ = 32, cellOf = new Map(), cellList = [];
-    const row = new Float32Array(NV);
     for (let i = 0; i < NV; i++) {
-      const key = Math.floor(X[i] / 1500) * 100000 + Math.floor(Y[i] / 1500);
-      let c = cellOf.get(key); if (!c) { c = { n: 0, la: 0, lo: 0, h: 0, i: cellList.length }; cellOf.set(key, c); cellList.push(c); }
-      c.n++; c.la += lat[i]; c.lo += lon[i]; c.h += h[i]; row[i] = c.i;
+      const key = (Math.floor(Y[i] / CS) - gy0) * GX + Math.floor(X[i] / CS) - gx0;
+      let c = cellOf.get(key); if (!c) { c = { n: 0, la: 0, lo: 0, h: 0, i: key }; cellOf.set(key, c); cellList.push(c); }
+      c.n++; c.la += lat[i]; c.lo += lon[i]; c.h += h[i];
     }
-    const hzData = new Uint8Array(AZ * cellList.length);
+    const hzData = new Uint8Array(AZ * GX * GY);
     for (const c of cellList) {
       const la0 = c.la / c.n, lo0 = c.lo / c.n, h0 = c.h / c.n, cl = Math.cos(la0 * D2R);
       for (let k = 0; k < AZ; k++) {
@@ -360,7 +368,8 @@ export default function create(ctx) {
         hzData[c.i * AZ + k] = clamp(Math.round(best / .8 * 255), 0, 255);
       }
     }
-    const hz = new THREE.DataTexture(hzData, AZ, cellList.length, THREE.RedFormat, THREE.UnsignedByteType);
+    const hz = new THREE.DataTexture(hzData, AZ, GX * GY, THREE.RedFormat, THREE.UnsignedByteType);
+    hz.userData.grid = new THREE.Vector4(xc - gx0 * CS, yc - gy0 * CS, GX, GY); hz.userData.cs = CS;
     hz.wrapS = THREE.RepeatWrapping; hz.wrapT = THREE.ClampToEdgeWrapping; hz.magFilter = hz.minFilter = THREE.LinearFilter; hz.needsUpdate = true;
     await new Promise(r => setTimeout(r, 0));
     // vertex buffers
@@ -374,7 +383,7 @@ export default function create(ctx) {
       const bh = code === 255 ? 0 : code === 0 ? 2.4 : code < 100 ? code * BHS : 36;
       A.set([Math.pow(at[o] / 255, 2) * 1500, s8(at[o + 1]) / 127, s8(at[o + 2]) / 127, bh], i * 4);
       B.set([s8(at[o + 4]) / 40, s8(at[o + 5]) / 40, at[o + 9] / 255, at[o + 10]], i * 4);
-      E.set([code === 255 ? 0 : 1, (row[i] + .5) / cellList.length, 0, kind], i * 4);
+      E.set([code === 255 ? 0 : 1, 0, 0, kind], i * 4);
       col.set([srgb(at[o + 6]), srgb(at[o + 7]), srgb(at[o + 8])], i * 3);
       const c5 = at[o + 11] | (at[o + 12] << 8);
       bank.set([Math.pow((c5 >> 11) / 31, 2.2), Math.pow(((c5 >> 5) & 63) / 63, 2.2), Math.pow((c5 & 31) / 31, 2.2)], i * 3);
@@ -392,7 +401,49 @@ export default function create(ctx) {
     const spheres = J.chunks.map(c => ({ p: llv(oy + c.y0 / ky, ox + c.x0 / kx, h[0]), r: c.r / 1000 }));
     const bridges = J.bridges && J.bridges.length ? buildBridges(J.bridges, J, origin) : null;
     const walls = buildWalls(J, NV, NT, X, Y, at, NA, idx, lake, lvl, origin);
+    corner.clear();                         // the height cache is only needed while building (it grows to ~10 MB per area)
     return { mesh, hz, cells, spheres, bridges, walls };
+  }
+  // An edge joining two shore vertices straight across the water (coarse triangulation of a narrow reach) carried
+  // "at the bank" over the whole channel: lace, the dark waterline and the edge fade drew pale slashes across the river
+  // every few hundred metres. Split each such edge at its midpoint and give the new vertex an honest shore distance.
+  function splitCrossings(X, Y, at, idx, NV, NT, NA) {
+    const sh = i => Math.pow(at[i * NA] / 255, 2) * 1500, K = 4194304, emap = new Map();
+    for (let t = 0; t < NT; t++) for (let e = 0; e < 3; e++) {
+      const a = idx[t * 3 + e], b = idx[t * 3 + (e + 1) % 3], k = a < b ? a * K + b : b * K + a, v = emap.get(k);
+      if (v === undefined) emap.set(k, [t]); else v.push(t);
+    }
+    const bad = [];
+    for (const [k, ts] of emap) {
+      if (ts.length !== 2) continue;
+      const a = Math.floor(k / K), b = k - a * K;
+      if (sh(a) < 4 && sh(b) < 4) { const L = Math.hypot(X[a] - X[b], Y[a] - Y[b]); if (L > 6) bad.push([a, b, ts[0], ts[1], L]); }
+    }
+    if (!bad.length) return null;
+    const n = bad.length, nX = new Float64Array(NV + n), nY = new Float64Array(NV + n), nat = new Uint8Array((NV + n) * NA), nidx = new Uint32Array((NT + 2 * n) * 3);
+    nX.set(X); nY.set(Y); nat.set(at); nidx.set(idx);
+    const used = new Uint8Array(NT), s8 = v => (v > 127 ? v - 256 : v);
+    let nv = NV, nt = NT;
+    for (const [a, b, t0, t1, L] of bad) {
+      if (used[t0] || used[t1]) continue;
+      const mx = (X[a] + X[b]) / 2, my = (Y[a] + Y[b]) / 2;
+      let sd = L / 2;
+      for (const t of [t0, t1]) for (let e = 0; e < 3; e++) { const c = idx[t * 3 + e]; if (c !== a && c !== b) sd = Math.min(sd, sh(c) + Math.hypot(mx - X[c], my - Y[c])); }
+      if (sd < 2 * Math.max(sh(a), sh(b)) + 2.5) continue;      // a sliver along the bank, not a crossing
+      used[t0] = used[t1] = 1;
+      const m = nv++; nX[m] = mx; nY[m] = my;
+      for (let j = 1; j < NA; j++) {
+        const va = at[a * NA + j], vb = at[b * NA + j];
+        nat[m * NA + j] = j === 1 || j === 2 || j === 4 || j === 5 ? (Math.round((s8(va) + s8(vb)) / 2) + 256) & 255 : j >= 6 && j <= 9 ? (va + vb + 1) >> 1 : va;
+      }
+      nat[m * NA] = Math.min(255, Math.round(Math.sqrt(sd / 1500) * 255));
+      for (const t of [t0, t1]) {
+        const o = t * 3, tri = [idx[o], idx[o + 1], idx[o + 2]], q = nt++ * 3;
+        for (let e = 0; e < 3; e++) { nidx[o + e] = tri[e] === b ? m : tri[e]; nidx[q + e] = tri[e] === a ? m : tri[e]; }
+      }
+    }
+    if (nv === NV) return null;
+    return { X: nX.subarray(0, nv), Y: nY.subarray(0, nv), at: nat.subarray(0, nv * NA), idx: nidx.subarray(0, nt * 3), NV: nv, NT: nt };
   }
   function ensure(pack) {
     const names = PACK_AREAS[pack]; if (!names) return;
@@ -501,8 +552,10 @@ export default function create(ctx) {
   else setTimeout(function wait() { if (ctx.geo) loadLines().catch(e => console.warn('river lines failed', e)); else setTimeout(wait, 300); }, 300);
 
   /* ---------- per frame ---------- */
-  const camP = new V3();
+  const camP = new V3(); let lastT = performance.now();
   function update(dt, alt) {
+    // fades run on wall-clock time: the dt handed in stops while the journey is paused
+    const now = performance.now(); dt = Math.min(.25, Math.max(0, (now - lastT) / 1000)); lastT = now;
     camP.copy(ctx.camera.position);
     for (const a of areas.values()) {
       if (!a.mesh) continue;
