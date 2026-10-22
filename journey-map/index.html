@@ -564,14 +564,16 @@ const terrainMat = new THREE.ShaderMaterial({
         base=mix(base,dc,detW);
       }
       // the imagery is draped from straight above, so on a steep face each texel smears down the slope: close up, break
-      // it with 3D detail that stays square on the face (crown clumps where it is dark, ledges where it is bare)
-      float sk=smoothstep(.12,.35,steep)*(1.-smoothstep(3.,8.,dist));
+      // it with 3D detail that stays square on the face (crown clumps and snow caught between them where it is dark and
+      // high, ledges where it is bare)
+      float sk=smoothstep(.12,.35,steep)*(1.-smoothstep(3.,8.,dist)), fleck=0.;
       if(sk>.01){
         vec3 q3=vec3(vUv*vec2(6530.,10370.),(vH+fineH)*${(EXAG / 30).toFixed(4)});       // 30 m cells, heights exaggerated
         float f2=1.-smoothstep(.12,.3,length(fwidth(q3.xy)));                            // the 12 m octave only while it spans pixels
         float c1=vnoise(q3), c2=mix(.5,vnoise(q3*2.5+5.),f2), led=vnoise(vec3(q3.xy*.5,q3.z*3.)+9.);
         float dark=1.-smoothstep(.03,.07,dot(base,vec3(.2126,.7152,.0722)));
-        base*=mix(1.,mix(.78+.3*led+.25*(c2-.5),.7+.45*c1+.35*(c2-.5),dark),sk);
+        base*=mix(1.,mix(.78+.3*led+.25*(c2-.5),.62+.6*c1+.35*(c2-.5),dark),sk);
+        fleck=sk*dark*smoothstep(.58,.74,c1*.45+c2*.55)*smoothstep(650.,1050.,vH)*smoothstep(.9,1.8,dist);   // (near by, the trees do it)
       }
       base*=1.5;
       float lum=dot(base,vec3(.2126,.7152,.0722));
@@ -588,6 +590,7 @@ const terrainMat = new THREE.ShaderMaterial({
       s=max(s,uFrost*.45*(1.-forest)*smoothstep(.75,.95,ne.z));
       // close up, break the snow into drifts and let tree crowns show through
       s*=mix(1.,.8+.4*nz2,relW*(1.-smoothstep(4.,18.,dist)));
+      s=max(s,fleck*.42);
       s=clamp(s,0.,1.)*uWinter;
 
       vec3 gcol=base*(.74+.36*dif);
@@ -1388,7 +1391,7 @@ const POI = {
   dachl: { lat: 47.2686, lon: 11.3933, t: 'Goldenes Dachl', x: '2,657 fire-gilded copper tiles, finished around 1500 for Emperor Maximilian I to watch festivities in the square below.' },
   dom: { lat: 47.2692, lon: 11.3938, t: 'Dom St. Jakob', x: 'Midnight Mass at 11:30 pm; arrive by 11 for seats. Lucas Cranach’s Mariahilf painting hangs above the high altar.' },
   hofkirche: { lat: 47.2683, lon: 11.3956, t: 'Hofkirche', x: 'Emperor Maximilian I’s empty tomb, guarded by 28 larger-than-life bronze figures, the “Schwarze Mander”.' },
-  bergisel: { d: 1.8, h: 190, lat: 47.2490, lon: 11.3995, t: 'Bergisel ski jump', x: 'Zaha Hadid’s 2002 tower above the 1964 and 1976 Olympic jumping hill. The Four Hills Tournament jumps here each January.' },
+  bergisel: { d: 1.25, h: 190, lat: 47.2490, lon: 11.3995, t: 'Bergisel ski jump', x: 'Zaha Hadid’s 2002 tower above the 1964 and 1976 Olympic jumping hill. The Four Hills Tournament jumps here each January.' },
   kaiserburg: { d: .85, h: 330, lat: 49.4578, lon: 11.0758, t: 'Imperial Castle', x: 'Every Holy Roman Emperor from 1050 to 1571 stayed in this castle on the sandstone ridge above the old town.' },
   hauptmarkt: { lat: 49.4540, lon: 11.0775, t: 'Hauptmarkt & Frauenkirche', x: 'Home of the Christkindlesmarkt. At noon the Frauenkirche clock’s electors circle the emperor. The market usually closes Dec 24, so check 2026 dates.' },
   lorenz: { lat: 49.4509, lon: 11.0786, t: 'St. Lorenz', x: 'Twin Gothic spires, about 80 m. Inside hangs Veit Stoss’s carved Angelic Salutation of 1517–18.' },

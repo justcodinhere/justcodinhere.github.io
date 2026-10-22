@@ -12,7 +12,9 @@ the file directly from disk won't load the map data).
   Neuschwanstein): real satellite imagery draped over real elevation,
   1.6× vertical exaggeration.
 - Winter look: snow placed by elevation, thinned on cliffs and under forest,
-  plus a light frost on the lowlands. The "Winter snow" chip turns it off.
+  plus a light frost on the lowlands. Close up, steep mountain faces get rock
+  ledges, clumps of trees and snow caught between them where the draped
+  imagery would smear. The "Winter snow" chip turns it off.
 - Rivers (Inn, Isar, Salzach, Danube) drawn as flowing water, snapped to the
   valley floor using the elevation data.
 - The plane, trains and car travel the actual routes, with a chase camera for
