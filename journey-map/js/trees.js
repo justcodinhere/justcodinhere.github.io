@@ -6,7 +6,7 @@
 // small group of trees on the local ground slope (the trees thin out again with distance). Three levels of detail: a
 // detailed set and a simpler mid set gathered around the camera as it moves, and far blocks of simple shapes; each tree is
 // drawn by exactly one of them (a dithered hand-over by distance). The buildings' sun shadows fall on the trees near the camera.
-// create(ctx) returns { buildTrees(meta, buildingsMesh) -> Promise<THREE.Group> (with .dispose()), update(dt, alt), onCity(on) }.
+// create(ctx) returns { buildTrees(meta.trees) -> Promise<THREE.Group> (with .dispose()), update(dt, alt), onCity(on) }.
 export default function create(ctx) {
   const { THREE, V3, D2R, BB, BHS, EXAG, uni, NOISE, HAZE, LIGHT, scene, camera, renderer, llv, terrainKm, heightM, phone, clamp } = ctx;
   const lite = phone();
@@ -239,7 +239,7 @@ export default function create(ctx) {
         vec3 d=position; float Ry=(1.-cb)*.5; vec3 R3=vec3(W,Ry,W);
         if(gSp>12.5&&gSp<13.5&&d.y<0.) R3.y*=1.45;            // willows hang
         if(gSp>6.5&&gSp<7.5&&d.y>0.) R3.y*=.82;               // oaks spread flat
-        float lump=1.+.6*(vnoise(d*1.35+gS*17.)-.5)+.22*(vnoise(d*3.4+gS*5.)-.5);   // lobed, uneven crowns
+        float lump=1.+.17*sin(dot(d,vec3(2.3,1.4,-1.9))+gS*40.)+.12*sin(dot(d,vec3(-1.6,2.9,2.4))+gS*23.)+.07*sin(dot(d,vec3(4.7,-2.2,3.9))+gS*61.);   // lobed, uneven crowns
         R3*=vec3(.85+.3*hs1(gS*8.3),.85+.3*hs1(gS*6.1),.85+.3*hs1(gS*4.9));
         l=vec3(0.,cb+Ry,0.)+d*R3*lump; n=normalize(d/R3); yf=d.y; dq=d;
       }
@@ -308,7 +308,7 @@ export default function create(ctx) {
       // snow along the tops of the limbs and plastered on the westerly (windward) side of the trunk
       vec3 east=normalize(vec3(up.z,0.,-up.x)), north=cross(up,east), wind=normalize(-east+north*.3);
       float k=uDetail<.5?vnoise(vL*2.3+sd*11.):.5;
-      float sn=uWinter*max(smoothstep(.7,.95,dot(n,up))*smoothstep(.35,.6,k),.6*smoothstep(.6,.95,dot(n,wind))*smoothstep(.5,.72,k)*step(.5,vL.y));
+      float sn=uWinter*max(smoothstep(.7,.95,dot(n,up))*smoothstep(.35,.6,k),.45*smoothstep(.6,.95,dot(n,wind))*smoothstep(.5,.72,k)*step(.5,vL.y));
       col=mix(col,SNOW,sn*.8);
       col*=lit(n,up,L,sunVis());
       col=applyHaze(col,vD,uAlt);
@@ -318,7 +318,7 @@ export default function create(ctx) {
       float facing=abs(dot(n,vV));    // front faces only: one layer of crown per tree keeps the overdraw down
       // twigs fan out from the fork: streaks along the crown's meridians (fast around, slow upwards), finer streaks,
       // and clumps and gaps in the tree's own frame; each faded to its mean once finer than a pixel
-      float s1=.5, s2=.5, c1=.5;
+      float s1=.5, s2=.5, c1=.5, tl=0., tc=0., tf=0.;
       if(uDetail<.5){             // the simpler sets are too small on screen for any of it
         vec3 d=normalize(vC1.xyz+1e-5); vec2 ring=normalize(d.xz+1e-4);
         vec3 sq=vec3(ring*5.5,d.y*1.6+sd*7.), sq2=vec3(ring*14.,d.y*3.4+sd*3.);
@@ -327,29 +327,47 @@ export default function create(ctx) {
         if(w1>0.) s1=mix(.5,vnoise(sq+sd*31.),w1);
         if(w2>0.) s2=mix(.5,vnoise(sq2+5.),w2);
         if(w3>0.) c1=mix(.5,vnoise(vL*.35+sd*40.),w3);
+        // close up the haze resolves into twigs: thin wandering lines (a contour of noise, stretched upwards as twigs
+        // grow up and out), coarse and fine, each faded back into the haze once its lines crowd closer than a few pixels
+        vec3 q=vL*vec3(.9,.45,.9)+sd*53.; float qa=length(fwidth(q));
+        tf=1.-smoothstep(.2,.45,qa);
+        if(tf>0.){
+          float a=vnoise(q), b=vnoise(q*2.6+7.1), fb=1.-smoothstep(.2,.45,qa*2.6);
+          tc=1.-smoothstep(0.,fwidth(a)*1.4+.003,abs(a-.5));
+          tl=max(tc,.75*fb*(1.-smoothstep(0.,fwidth(b)*1.3+.003,abs(b-.5))));
+        }
       }
       float t=.4*s1+.25*s2+.35*c1;
+      // twig grain: a hash about a pixel across, anchored to the tree (two scales blended by distance, so it holds still
+      // as the camera moves) and drawn out upwards like the twigs; the crown's cover is dithered against it, which
+      // frays the outline and keeps the crown from reading as a smooth shell
+      vec3 gp=vL*vec3(1.,.5,1.); float gl=log2(max(length(fwidth(gp)),1e-4)*1.6), gf=floor(gl);
+      float g=mix(hash(floor(gp*exp2(-gf))+gf*17.3+sd*91.),hash(floor(gp*exp2(-gf-1.))+gf*17.3+17.3+sd*91.),gl-gf);   // a scale keeps its pattern
       // thin towards the outline (less crown to look through there), thin underneath, denser for some trees than others
-      float al=dens*(.75+.5*fract(sd*7.7))*1.05*pow(facing,.8)*smoothstep(.16,.66,t)*(.45+.55*smoothstep(-1.,-.2,yf));
-      vec3 tw=vC2.rgb*.82*(.75+.5*s2)*(.8+.4*fract(sd*3.1))*mix(vec3(1.),vec3(1.06,1.,.92),fract(sd*5.3));
-      float vis=sunVis(); vec3 a0=winterLight(normalize(n*.4+up*.6),up,vec3(0.))*.8;   // twigs shade each other
-      vec3 li=a0+(winterLight(n,up,L)-winterLight(n,up,vec3(0.)))*(.4+.6*vis)*.85;
+      float dv=dens*(.75+.5*fract(sd*7.7)), lo=.45+.55*smoothstep(-1.,-.2,yf), cov=pow(facing,.7)*smoothstep(.16,.66,t)*lo*1.1;
+      float al=dv*mix(smoothstep(g-.36,g+.36,cov),(.16*smoothstep(.16,.66,t)+.8*tl)*pow(facing,.5)*lo,tf);
+      vec3 tw=vC2.rgb*.82*(.75+.5*s2)*(.8+.4*fract(sd*3.1))*mix(vec3(1.),vec3(1.06,1.,.92),fract(sd*5.3))*(1.-.15*tl)*(.8+.4*g);
+      // lit like a tangle of thin twigs, not a surface: mostly from the sky, the sun side only somewhat brighter
+      float vis=sunVis(); vec3 a0=winterLight(normalize(n*.3+up*.7),up,vec3(0.))*.8;
+      vec3 li=a0+(winterLight(n,up,L)-winterLight(n,up,vec3(0.)))*(.25+.45*vis)*.85+vec3(.04)*vis;
       vec3 col=mix(tw,vec3(.40,.42,.46),.06*uWinter)*li;        // a touch of hoar frost
-      // snow caught along the upper and windward branches
+      // snow caught along the upper and windward branches: the densest grain there (close up: the coarse twigs)
       vec3 east=normalize(vec3(up.z,0.,-up.x)), wind=normalize(-east+cross(up,east)*.3);
-      float sn=uWinter*smoothstep(-.1,.7,yf)*max(smoothstep(.2,.75,dot(n,up)),.7*smoothstep(.3,.8,dot(n,wind)))*smoothstep(.52,.74,.6*s2+.4*c1);
-      col=mix(col,SNOW*li,sn*.55); al=max(al,dens*.42*sn*smoothstep(0.,.5,facing));
+      float sn=uWinter*smoothstep(-.1,.7,yf)*max(smoothstep(.2,.75,dot(n,up)),.7*smoothstep(.3,.8,dot(n,wind)))*mix(1.-smoothstep(.1,.28,g),tc*smoothstep(.45,.7,c1),tf);
+      col=mix(col,SNOW*li,sn*.75);
       // summer: a leafy crown instead
-      vec3 lf=vec3(.035,.07,.022)*(.7+.6*s2)*li; float als=.92*smoothstep(0.,.25,facing)*smoothstep(.25,.42,t+.1*s2);
+      vec3 lf=vec3(.035,.07,.022)*(.7+.6*s2)*(.8+.4*g)*li; float als=.92*smoothstep(g-.4,g+.4,smoothstep(0.,.25,facing)*smoothstep(.25,.42,t+.1*s2)*1.2);
       col=mix(lf,col,uWinter); al=mix(als,al,uWinter);
       if(al<.012) discard;
       col=applyHaze(col,vD,uAlt);
       gl_FragColor=vec4(col,al);` + END + `}`;
 
   /* ---------- materials: one program per kind, a clone per mesh (own origin and shadow matrix) ---------- */
-  const shU = { uShadow: { value: null }, uShadowOn: { value: 0 }, uShadowTexel: { value: 1 } };
+  let shU = { uShadow: { value: null }, uShadowOn: { value: 0 }, uShadowTexel: { value: 1 } };
   // bare crowns are a faint haze beyond a few km: they stop at R2B, the dark conifers carry on to R2
-  const R2B = R2 * .6, lodU = [V4(-1e9, R0, 0, B0), V4(R0, R1, B0, B1), V4(R1, R2, B1, B2), V4(R1, R2B, B1, B2), V4(-1e9, R0B, 0, B0), V4(R0B, R1, B0, B1)].map(value => ({ value }));
+  // and further in, their trunk and limbs are thinner than a pixel beyond R1W: the twig haze alone carries on to R1
+  const R2B = R2 * .6, R1W = lite ? 1.1 : 1.5, BW = .3;
+  const lodU = [V4(-1e9, R0, 0, B0), V4(R0, R1, B0, B1), V4(R1, R2, B1, B2), V4(R1, R2B, B1, B2), V4(-1e9, R0B, 0, B0), V4(R0B, R1, B0, B1), V4(R0B, R1W, B0, BW)].map(value => ({ value }));
   let MAT = null;
   function materials() {
     const mk = (vs, fs, transparent) => new THREE.ShaderMaterial({
@@ -359,13 +377,8 @@ export default function create(ctx) {
     MAT = { con: mk(conVS, conFS(), false), pine: mk(pineVS, pineFS(), false), wood: mk(woodVS, woodFS(), false), shell: mk(shellVS, shellFS(), true) };
   }
   const SHARED = [...Object.keys(uni), ...Object.keys(SPU), ...Object.keys(shU)];
-  const mShadow = new THREE.Matrix4(), _t = new V3();
-  let shadowSrc = null;                  // a building chunk whose shadow matrix (map from its local space) we re-base
-  function onShadow() {
-    const u = this.material.uniforms;
-    if (!shadowSrc || shU.uShadowOn.value < .01) return;
-    _t.copy(this.position).sub(shadowSrc.position);
-    u.uShadowM.value.copy(shadowSrc.material.uniforms.uShadowM.value).multiply(mShadow.makeTranslation(_t.x, _t.y, _t.z));
+  function onShadow() {                  // the map's world matrix, re-based to this mesh's origin (which moves as we gather)
+    if (SHADOWS && shU.uShadowOn.value > .01) this.material.uniforms.uShadowM.value.copy(ctx.shadow.matrix).multiply(this.matrixWorld);
   }
   // programs per family: the opaque part and, for bare trees, the twig crown
   const PROG = [[['con', 'con']], [['pine', 'pine']], [['wood', 'larchwood'], ['shell', 'larchshell']], [['wood', 'wood'], ['shell', 'shell']]];
@@ -376,8 +389,8 @@ export default function create(ctx) {
     const src = MAT[prog], m = src.clone();
     for (const k of SHARED) m.uniforms[k] = src.uniforms[k];
     const bare = prog === 'shell' || prog === 'wood';
-    m.uniforms.uLod = lodU[lod === 2 ? (prog === 'shell' ? 3 : 2) : bare ? 4 + lod : lod]; m.uniforms.uDetail.value = lod > 0 ? 1 : 0;
-    const mesh = new THREE.Mesh(g, m); mesh.onBeforeRender = onShadow;
+    m.uniforms.uLod = lodU[lod === 2 ? (prog === 'shell' ? 3 : 2) : prog === 'wood' && lod ? 6 : bare ? 4 + lod : lod]; m.uniforms.uDetail.value = lod > 0 ? 1 : 0;
+    const mesh = new THREE.Mesh(g, m); mesh.onBeforeRender = onShadow; mesh.name = 'trees:' + prog + lod;
     if (prog === 'shell') mesh.renderOrder = 3.5;   // after the buildings' shadow overlay on the ground, before smoke
     return mesh;
   }
@@ -413,7 +426,8 @@ export default function create(ctx) {
   }
 
   /* ---------- a pack's trees ---------- */
-  const CLO = .006, CLA = .004, BLO = .04, BLA = .027;       // gather grid (~450 m) and far blocks (~3 km)
+  const CLO = .006, CLA = .004, BLO = .02, BLA = .0135;      // gather grid (~450 m) and far blocks (~1.5 km: a block round
+                                                              // the camera is skipped, not drawn and culled tree by tree)
   // trees per stand close up: nine of the narrow conifers, six of the wide-crowned broadleaf (fewer on phones)
   const KF = [9, 9, 9, 6].map(k => Math.min(k, KMAX));
   const h1 = x => { const v = Math.sin(x * 12.9898 + .731) * 43758.5453; return v - Math.floor(v); };
@@ -437,11 +451,12 @@ export default function create(ctx) {
     return (px - _cp.x) ** 2 + (py - _cp.y) ** 2 + (pz - _cp.z) ** 2;
   }
   const _cp = new V3();
-  async function buildTrees(t, bmesh) {
+  async function buildTrees(t) {
     if (!t || t.v !== 2) return null;
-    if (!MAT) {
-      const tex = bmesh && bmesh.material && bmesh.material.uniforms && bmesh.material.uniforms.uShadow && bmesh.material.uniforms.uShadow.value;
-      SHADOWS = !!(renderer.capabilities.isWebGL2 && tex); shU.uShadow.value = tex || null;
+    if (!MAT) {                          // buildings.js shares its sun shadow map (and keeps its uniforms current)
+      const sh = ctx.shadow;
+      SHADOWS = !!(renderer.capabilities.isWebGL2 && sh && sh.uniforms.uShadow.value);
+      if (SHADOWS) shU = sh.uniforms;
       materials();
     }
     const bin = atob(t.data), u8 = new Uint8Array(bin.length);
@@ -474,8 +489,9 @@ export default function create(ctx) {
       const key = Math.floor((lon[i] - lon0) / BLO) + ',' + Math.floor((lat[i] - lat0) / BLA);
       let b = blocks.get(key); if (!b) blocks.set(key, b = []); b.push(i);
     }
+    let nb = 0;
     for (const list of blocks.values()) {
-      await new Promise(r => setTimeout(r, 0));
+      if (++nb % 8 === 0) await new Promise(r => setTimeout(r, 0));
       const o = new V3(W3[list[0] * 3], W3[list[0] * 3 + 1], W3[list[0] * 3 + 2]), c = new V3();
       for (const i of list) { c.x += W3[i * 3]; c.y += W3[i * 3 + 1]; c.z += W3[i * 3 + 2]; }
       c.multiplyScalar(1 / list.length);
@@ -500,7 +516,10 @@ export default function create(ctx) {
 
   /* ---------- the detailed and mid sets, re-gathered around the camera as it moves ---------- */
   const dynRoot = new THREE.Group(); scene.add(dynRoot);
-  const dyn = { pack: null, sets: [0, 1].map(lod => ({ lod, at: new V3(1e9, 0, 0), origin: new V3(), buckets: [] })) };
+  const dyn = { pack: null, sets: [0, 1].map(lod => ({ lod, at: new V3(1e9, 0, 0), fw: new V3(), asp: 0, origin: new V3(), buckets: [] })) };
+  // Only trees in (a widened) view are gathered: re-gathered once the camera turns by more than part of the widening.
+  const VA = .21, _f = new V3(), _r = new V3(), _u = new V3();
+  const turned = set => _f.set(0, 0, -1).applyQuaternion(camera.quaternion).dot(set.fw) < Math.cos(VA * .6) || Math.abs(camera.aspect / set.asp - 1) > .05;
   function grow(set, f, need) {             // (re)allocate a family's buffers and its meshes
     let b = set.buckets[f];
     if (!b) b = set.buckets[f] = { cap: 0, n: 0, A: null, iA: null, iB: null, meshes: [] };
@@ -514,40 +533,64 @@ export default function create(ctx) {
     return b;
   }
   const _c = new V3();
-  // every tree (stand children included) within [rIn, rOut) of the camera that could show before the next gather
+  // every tree (stand children included) within [rIn[f], rOut[f]) of the camera (by family f) that could show before the
+  // next gather
   function gather(P, set, rIn, rOut, kMax, margin) {
-    const cp = _cp.copy(camera.position), o = set.origin.copy(ctx.cam.target);
-    set.at.copy(cp);
+    const cp = _cp.copy(camera.position), o = set.origin.copy(ctx.cam.target), q = camera.quaternion;
+    set.at.copy(cp); set.fw.set(0, 0, -1).applyQuaternion(q); set.asp = camera.aspect;
+    _r.set(1, 0, 0).applyQuaternion(q); _u.set(0, 1, 0).applyQuaternion(q);
+    const fw = set.fw, hv = camera.fov / 2 * D2R, TY = Math.tan(hv + VA), TX = Math.tan(Math.atan(Math.tan(hv) * camera.aspect) + VA), RAD = .1 / Math.cos(hv + VA);
     for (const b of set.buckets) if (b) b.n = 0;
     _c.copy(cp).normalize();
-    const la = Math.asin(_c.y) / D2R, lo = Math.atan2(_c.x, _c.z) / D2R, ro = rOut + .06, dla = ro / 111.19, dlo = ro / (111.19 * Math.cos(la * D2R));
+    const rMax = Math.max(...rOut), la = Math.asin(_c.y) / D2R, lo = Math.atan2(_c.x, _c.z) / D2R, dla = (rMax + .06) / 111.19, dlo = (rMax + .06) / (111.19 * Math.cos(la * D2R));
     const i0 = clamp(Math.floor((lo - dlo - P.lon0) / CLO), 0, P.gx - 1), i1 = clamp(Math.floor((lo + dlo - P.lon0) / CLO), 0, P.gx - 1);
     const j0 = clamp(Math.floor((la - dla - P.lat0) / CLA), 0, P.gy - 1), j1 = clamp(Math.floor((la + dla - P.lat0) / CLA), 0, P.gy - 1);
-    const ri = rIn - .06, W = P.W3, ri2 = rIn > 0 ? rIn * rIn : -1, ro2 = rOut * rOut;
-    if (cp.length() - 6371 < rOut + 3) for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const W = P.W3, ri2 = rIn.map(r => r > 0 ? r * r : -1), ro2 = rOut.map(r => r * r);
+    if (cp.length() - 6371 < rMax + 3) for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const c = j * P.gx + i;
       for (let k = P.start[c], e = P.start[c + 1]; k < e; k++) {
-        const t = P.order[k], dx = W[t * 3] - cp.x, dy = W[t * 3 + 1] - cp.y, dz = W[t * 3 + 2] - cp.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (d >= ro || d < ri) continue;
-        const f = P.fam[t], K = P.Bv[t * 4 + 3] >= 16 ? Math.min(kMax, KF[f]) : 1;
+        const t = P.order[k], f = P.fam[t], dx = W[t * 3] - cp.x, dy = W[t * 3 + 1] - cp.y, dz = W[t * 3 + 2] - cp.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d >= rOut[f] + .06 || d < rIn[f] - .06) continue;
+        const z = dx * fw.x + dy * fw.y + dz * fw.z;       // in view, with a stand's spread and a tree's height to spare
+        if (z < -.1 || Math.abs(dx * _r.x + dy * _r.y + dz * _r.z) > z * TX + RAD || Math.abs(dx * _u.x + dy * _u.y + dz * _u.z) > z * TY + RAD) continue;
+        const K = P.Bv[t * 4 + 3] >= 16 ? Math.min(kMax, KF[f]) : 1;
         let b = set.buckets[f];
         for (let ch = 0; ch < K; ch++) {
           if (!b || b.n >= b.cap) b = grow(set, f, (b ? b.n : 0) + K);
           const q = b.n * 8, d2 = child(P, t, ch, o, b.A, q);
-          if (d2 >= ro2 || d2 < ri2 || Math.sqrt(d2) > b.A[q + 4] + margin) continue;
+          if (d2 >= ro2[f] || d2 < ri2[f] || Math.sqrt(d2) > b.A[q + 4] + margin) continue;
           b.n++;
         }
       }
     }
     _c.copy(cp).sub(o);
-    for (const b of set.buckets) {
-      if (!b) continue;
+    set.buckets.forEach((b, f) => {
+      if (!b) return;
+      // mid-set bare trees: those whose wood shows first, so the wood mesh draws just them
+      let nw = b.n;
+      if (set.lod && f > 1) {
+        const A = b.A, rw2 = (R1W + BW / 2 + margin) ** 2, tmp = _sw; let i = 0, j = b.n - 1;
+        const far = q => (A[q] - _c.x) ** 2 + (A[q + 1] - _c.y) ** 2 + (A[q + 2] - _c.z) ** 2 > rw2;
+        while (i <= j) {
+          if (!far(i * 8)) { i++; continue; }
+          if (far(j * 8)) { j--; continue; }
+          tmp.set(A.subarray(i * 8, i * 8 + 8)); A.copyWithin(i * 8, j * 8, j * 8 + 8); A.set(tmp, j * 8); i++; j--;
+        }
+        nw = i;
+      }
       if (b.n) { b.ib.clearUpdateRanges(); b.ib.addUpdateRange(0, b.n * 8); b.ib.needsUpdate = true; }
-      for (const m of b.meshes) { m.visible = b.n > 0; m.geometry.instanceCount = b.n; m.position.copy(o); m.geometry.boundingSphere.set(_c, rOut + .06); }
-    }
+      b.meshes.forEach((m, k) => {
+        const c = k === 0 && f > 1 ? nw : b.n;
+        m.visible = c > 0; m.geometry.instanceCount = c; m.position.copy(o); m.geometry.boundingSphere.set(_c, rMax + .06);
+      });
+    });
   }
+  const _sw = new Float32Array(8);
   function hideDyn() { for (const s of dyn.sets) { s.at.set(1e9, 0, 0); for (const b of s.buckets) if (b) for (const m of b.meshes) m.visible = false; } dyn.pack = null; }
 
+  // gather radii by family (spruce-like, pine, larch, broadleaf): the bare trees hand over from the detailed set sooner
+  const G0in = [-1, -1, -1, -1], G0out = [R0, R0, R0B, R0B].map(r => r + B0 / 2 + M0);
+  const G1in = [R0, R0, R0B, R0B].map(r => r - B0 / 2 - M1), G1out = [1, 1, 1, 1].map(() => R1 + B1 / 2 + M1);
   const _d = new V3();
   function update(dt, alt) {
     const root = ctx.state.trees, P = root && root.userData.trees;
@@ -562,13 +605,8 @@ export default function create(ctx) {
       for (const m of b.meshes) m.visible = m.material.uniforms.uLod === lodU[3] ? visB : vis;
     }
     const s0 = dyn.sets[0], s1 = dyn.sets[1];
-    if (s0.at.distanceTo(cp) > M0 * .9) gather(P, s0, -1, R0 + B0 / 2 + M0, 9, M0);
-    if (s1.at.distanceTo(cp) > M1 * .9) gather(P, s1, R0B - B0 / 2 - M1, R1 + B1 / 2 + M1, 4, M1);
-    // the buildings' shadow map, while it is on
-    const bm = ctx.state.packMesh, bu = bm && bm.material && bm.material.uniforms;
-    if (SHADOWS && bu && bu.uShadowOn && bm.userData.chunks && bm.userData.chunks.length) {
-      shU.uShadowOn.value = bu.uShadowOn.value; shU.uShadowTexel.value = bu.uShadowTexel.value; shadowSrc = bm.userData.chunks[0];
-    } else { shU.uShadowOn.value = 0; shadowSrc = null; }
+    if (s0.at.distanceTo(cp) > M0 * .9 || turned(s0)) gather(P, s0, G0in, G0out, 9, M0);
+    if (s1.at.distanceTo(cp) > M1 * .9 || turned(s1)) gather(P, s1, G1in, G1out, 4, M1);
   }
   function onCity(on) { if (on) hideDyn(); }
 

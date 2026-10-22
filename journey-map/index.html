@@ -624,6 +624,7 @@ function buildTerrain() {
   g.setIndex(new THREE.BufferAttribute(idx, 1));
   g.computeBoundingSphere(); g.boundingSphere.radius += 10;
   terrainMesh = new THREE.Mesh(g, terrainMat); scene.add(terrainMesh);
+  terrainMesh.renderOrder = -2;           // drawn first: js/streets.js drapes on its depth alone, before anything else
   const c = llv(48.0, 11.3, 0), f = enu(c), az = 165 * D2R, el = 24 * D2R;
   uni.uRegionSun.value.copy(f.east).multiplyScalar(Math.sin(az) * Math.cos(el))
     .addScaledVector(f.north, Math.cos(az) * Math.cos(el)).addScaledVector(f.up, Math.sin(el)).normalize();
@@ -2036,7 +2037,7 @@ const ctx = {
 };
 async function loadFeatures() {
   const only = new URLSearchParams(location.search).get('only');    // ?only=water,life for testing one feature
-  const names = ['buildings', 'water', 'life', 'landmarks', 'trees', 'vehicles'].filter(n => !only || only.split(',').includes(n) || n === 'buildings');
+  const names = ['buildings', 'water', 'life', 'landmarks', 'trees', 'vehicles', 'streets'].filter(n => !only || only.split(',').includes(n) || n === 'buildings');
   await Promise.all(names.map(async n => {
     try {
       const mod = await import(`./js/${n}.js`);

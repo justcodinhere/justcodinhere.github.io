@@ -205,7 +205,7 @@ def run(name):
   pb*=np.where(alp,1-sm(1250,1550,h),1)
   riv=near_any(w_tree,St[:,:2],35)&(h<1000)
   urb=(np.isin(context(St[:,:2]),['park','town','cemetery'])|near_any(b_tree,St[:,:2],60))&(h<900)   # park and town groves are mostly broadleaf
-  pb[urb]=.35*pb[urb]+.65*.85
+  pb[urb]=.25*pb[urb]+.75*.9
   pb[riv]=np.maximum(pb[riv],.75)
   broad=u2<pb
   sp=np.zeros(len(St),int)
@@ -234,6 +234,7 @@ def run(name):
   def single_species(xy,nt,tg,row_id=None):
     lon,lat=ll(xy); h=elev(lon,lat); rg=region(lon,lat,h); ctx=context(xy); riv=near_any(w_tree,xy,30)
     town=(ctx=='town')|near_any(b_tree,xy,35); u=rng.random(len(xy))
+    shade=near_any(b_tree,xy,100)&(rg!='alp')         # dark summer crowns in the cities are as often in a building's shadow
     if row_id is not None and len(xy):                  # one species along each row
       _,inv=np.unique(row_id,return_inverse=True); u=np.random.default_rng(3).random(inv.max()+1)[inv]
     sp=np.zeros(len(xy),int); hq=np.zeros(len(xy))
@@ -242,7 +243,7 @@ def run(name):
       s=species_of(t); ht=height_of(t)
       if s is None:
         lt=t.get('leaf_type'); den=t.get('denotation','')
-        if lt=='needleleaved' or (nt is not None and nt[i]<.095 and not town[i] and ctx[i] not in ('park','orchard','cemetery')) or (h[i]>1250 and lt!='broadleaved'):
+        if lt=='needleleaved' or (nt is not None and nt[i]<.095 and not town[i] and not shade[i] and ctx[i] not in ('park','orchard','cemetery')) or (h[i]>1250 and lt!='broadleaved'):
           s='pine' if (rg[i]=='fr' and u[i]<.6) or (rg[i]=='plain' and u[i]<.3) else ('fir' if u[i]>.85 else 'spruce')
         elif ctx[i]=='orchard': s='fruit'
         elif riv[i] and h[i]<1000: s=SPECIES[pick(MIX['river'],u[i:i+1])[0]]
