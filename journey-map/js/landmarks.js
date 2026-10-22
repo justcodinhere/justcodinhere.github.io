@@ -14,8 +14,9 @@ export default function create(ctx) {
   const FAR = lite ? 32 : 45, FAR_D = lite ? 2.4 : 4, BUILD = lite ? 9 : 14, DROP = 45;   // km: fade-out (main, small detail), build and drop distances
   // landmark -> region module (js/lm/<region>.js exports { name(K) {...} })
   const REGION = {
-    frauenkircheMuc: 'muc', rathaus: 'muc', alterPeter: 'muc', stMichael: 'muc',
-    domIbk: 'ibk', hofkirche: 'ibk', goldenesDachl: 'ibk', bergisel: 'ibk',
+    frauenkircheMuc: 'muc', rathaus: 'muc', alterPeter: 'muc', stMichael: 'muc', altesRathaus: 'muc', heiliggeist: 'muc', mariensaeule: 'muc',
+    buergersaal: 'muc', asamkirche: 'muc',
+    domIbk: 'ibk', hofkirche: 'ibk', goldenesDachl: 'ibk', bergisel: 'ibk', helbling: 'ibk', stadtturm: 'ibk', ottoburg: 'ibk', hofburg: 'ibk',
     kaiserburg: 'nue', stLorenz: 'nue', frauenkircheNue: 'nue',
     neuschwanstein: 'alps', hohenschwangau: 'alps', kufstein: 'alps', wieskirche: 'alps',
   };
@@ -153,6 +154,12 @@ export default function create(ctx) {
         col=base*(1.-.3*pulse(u, fu, 0., .03, .22, -1e3, 1e3)*det)*(.9+.2*vnoise(vec3(u*.5, h*2., seed)));   // boards
       } else if(mat<14.5){ spec=.3;                                                            // dark iron
       } else if(mat<15.5){ col=base*(.9+.2*vnoise(vL*3.)); spec=1.4;                            // gilding
+      } else if(mat>16.5&&mat<17.5){
+        // wooded hillside (a modelled hill where the height map lost one): conifer crowns at the 4-6 m scale, snow caught
+        // on the crowns and lying in the clearings
+        vec3 p=vL; float cr=vnoise(p*.21), cr2=vnoise(p*.63+3.), gap=smoothstep(.6, .78, vnoise(p*.045+11.));
+        col=base*(.5+.65*cr)*mix(1., .8+.4*cr2, det*.5+.5);
+        snowK=(gap*.7+smoothstep(.62, .88, cr2)*.3*(1.-gap))*smoothstep(.25, .75, nyT);
       }
       // ---------------- windows (walls), laid out in bays from the facade coordinates ----------------
       float winO=0.;
@@ -197,9 +204,15 @@ export default function create(ctx) {
         if(wt>4.5&&wt<5.5) gl=vec3(.025, .024, .026)*(1.+1.6*pulse(h, fh, 0., .09, .28, -1e3, 1e3)*det);   // belfry louvres
         if(wt>5.5&&wt<6.5){ gl=vec3(.03, .027, .024); add+=vec3(.5, .3, .12)*.05*o; }                    // open arcade
         if(wt>7.5&&wt<8.5) gl=vec3(.02);                                                               // slit
-        if(wt>8.5) gl=vec3(.075, .045, .028)*(1.-.35*pulse(cu, fu, 0., .03, .16, -1e3, 1e3)*det)*(1.-.5*box(cu, fu, -.03, .03));   // a pair of plank doors
+        if(wt>8.5&&wt<10.5) gl=vec3(.075, .045, .028)*(1.-.35*pulse(cu, fu, 0., .03, .16, -1e3, 1e3)*det)*(1.-.5*box(cu, fu, -.03, .03));   // a pair of plank doors
         vec3 stoneC=trim*(.92+.1*vnoise(vec3(u*.5, h*.5, seed)));
-        if(wt>6.5&&wt<7.5){ col=mix(col, col*.7, o); col=mix(col, col*.85, fr); }                     // blind niche
+        if(wt>6.5&&wt<7.5||wt>10.5){ col=mix(col, col*.7, o); col=mix(col, col*.85, fr);              // blind niche
+          if(wt>10.5){                                       // round-headed niche with a statue: robe, head, a little light from above
+            float hf=(h-y0)/max(y1-y0, .1), bw=w*(.12+.08*(1.-hf));
+            float fig=clamp(cov(max(abs(cu)-bw, max(.06-hf, hf-.76)), far)+cov(length(vec2(cu, h-y0-(y1-y0)*.84))-w*.11, far), 0., 1.);
+            col=mix(col, trim*(.55+.2*hf), fig*inb*(1.-farW)*.95);
+          }
+        }
         else {
           col=mix(col, bt(flags, 6.)>.5 ? stoneC : col*.62, fr);        // the reveal: in shadow, or a stone frame (flag 64)
           col=mix(col, stoneC, o*tr);
@@ -246,7 +259,7 @@ export default function create(ctx) {
         col=mix(col, vec3(.84, .87, .92), uWinter*.22*(1.-sm)*slope*sk*det);                  // snow lingering in the courses
         col=mix(col, vec3(.86, .89, .94)*(.95+.08*vnoise(vec3(u*.9, r*2.2, seed+7.))), sm); spec*=1.-sm;
       } else if(mat<7.5||mat>8.5&&mat<11.5||mat>12.5){
-        snowK=max(snowK, smoothstep(.74, .93, nyT));                                             // ledges, sills, copings
+        snowK=max(snowK, mat>16.5 ? 0. : smoothstep(.74, .93, nyT));                             // ledges, sills, copings
         float sm=uWinter*clamp(snowK*smoothstep(.1, .4, vnoise(vec3(vL.xy*.7, vL.z*.3))+snowK*.6), 0., 1.);
         col=mix(col, vec3(.86, .89, .94), sm); spec*=1.-sm;
       }
@@ -281,8 +294,8 @@ export default function create(ctx) {
   // colour, f: K.F flags (walls), snow: 0..1 (roofs), ao: 0..1, seed }. Windows: o.win = { t: K.W.LANCET, w, y0, y1,
   // n (count) or P (pitch), m (margin at the face ends), lights } - drawn by the shader, centred in equal bays.
   // Geometry goes to the main mesh, or inside K.detail(() => ...) to a second mesh that fades out sooner (small parts).
-  const M = { BRICK: 0, ASHLAR: 1, PLASTER: 2, LIME: 3, COPPER: 4, SLATE: 5, TILE: 6, GILT: 7, GLASS: 8, ROCK: 9, CONCRETE: 10, STONE: 11, CLOCK: 12, WOOD: 13, IRON: 14, GOLD: 15, PLAIN: 16 };
-  const W = { NONE: 0, LANCET: 1, ROUND: 2, RECT: 3, ROSE: 4, BELFRY: 5, ARCADE: 6, BLIND: 7, SLIT: 8, DOOR: 9, DOOR_R: 10 };
+  const M = { BRICK: 0, ASHLAR: 1, PLASTER: 2, LIME: 3, COPPER: 4, SLATE: 5, TILE: 6, GILT: 7, GLASS: 8, ROCK: 9, CONCRETE: 10, STONE: 11, CLOCK: 12, WOOD: 13, IRON: 14, GOLD: 15, PLAIN: 16, FOREST: 17 };
+  const W = { NONE: 0, LANCET: 1, ROUND: 2, RECT: 3, ROSE: 4, BELFRY: 5, ARCADE: 6, BLIND: 7, SLIT: 8, DOOR: 9, DOOR_R: 10, NICHE: 11 };
   const F = { PLINTH: 1, FRIEZE: 2, PILASTER: 4, FRAME: 8, QUOIN: 16, EAVES: 32, STONEFRAME: 64, TIMBER: 128 };
   const ROOFISH = new Set([M.COPPER, M.SLATE, M.TILE, M.GILT]);
   const hex = c => typeof c === 'string' ? [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)] : c;

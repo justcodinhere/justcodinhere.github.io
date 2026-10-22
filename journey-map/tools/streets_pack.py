@@ -12,7 +12,7 @@ u8 0, u16 npts, u16 nw, int16 x,y of the first point (0.5 m), int8 dx,dy * (npts
 are the inner rim), int16 x,y * nv (0.25 m), indices * 3nt (u8 below 256 vertices, else u16)]."""
 import pickle, json, math, sys, os, base64, struct, collections
 import numpy as np, shapely, shapely.wkb, shapely.ops, triangle
-from shapely.geometry import box, LineString, MultiLineString, Polygon, MultiPolygon, Point
+from shapely.geometry import box, LineString, Polygon
 from shapely.ops import unary_union, linemerge
 from PIL import Image, ImageDraw
 

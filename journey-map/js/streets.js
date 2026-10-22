@@ -1,8 +1,9 @@
 // Streets: the town floor between the houses. Overture street centrelines (assets/streets/<area>.json, built by
 // tools/streets_pack.py) become ribbons draped on the drawn terrain: snow-cleared wet asphalt with slush in the gutters,
 // worn lane and tram lines, granite kerbs and pavements reaching to the facades, pale granite setts with a dusting of snow
-// in the pedestrian zones and squares, trodden snow on the park paths, snowy ballast and sleepers at the stations, and
-// ploughed banks along the roads in the open. Detail is box-filtered in the shader (it never shimmers), strips thinner
+// in the pedestrian zones and squares, worn tracks through the snow on the paths, snowy ballast and sleepers at the
+// stations, and ploughed banks along the roads in the open (where the snow follows the terrain's own snow line).
+// Detail is box-filtered in the shader (it never shimmers), strips thinner
 // than a pixel are widened and faded, and everything fades into the imagery by ~5 km. Drawn right after the terrain and
 // before anything else, without writing depth: houses, water, bridges, huts and trees all simply cover it.
 // create(ctx) returns { update(dt, alt), onPack(name), onStep(step), onCity(on) }.
@@ -46,7 +47,7 @@ export default function create(ctx) {
       float d=length(mv.xyz); mv.xyz*=max(1.-(uPull+.0005*d)/max(d,.02),.5);
       gl_Position=projectionMatrix*mv; vL=p; vUV=aUV; vE=aE; vK=aK; vW=k; }`;
   const FS = NOISE + HAZE + LIGHT + `
-    uniform vec3 uOrigin, uRegionSun, uEast, uNorth; uniform vec4 uBox; uniform float uAlt, uWinter, uSnowLine, uFade, uFar0, uFar1, uDbg;
+    uniform vec3 uOrigin, uRegionSun, uEast, uNorth; uniform vec4 uBox; uniform float uAlt, uWinter, uSnowLine, uFade, uFar0, uFar1;
     varying vec3 vL; varying vec2 vUV; varying vec4 vE, vK; varying float vW;
     const vec3 SNOW=vec3(.84,.87,.91), SLUSH=vec3(.28,.265,.24);              // stone colours lean warm against the blue sky light
     float bt(float x, float s){ return mod(floor(x/exp2(s)), 2.); }
@@ -140,12 +141,13 @@ export default function create(ctx) {
         // ---- carriageway: wet dark asphalt, slush in the gutters, compact snow and wheel ruts on the small streets ----
         vec3 asp=asphaltC(q,mpp,sd);
         float minor=step(5.5,kind), nL=max(2.,floor(2.*c/3.1+.25)), lw=2.*c/nL, x=v+c;
-        float lv=mod(x,lw)-lw*.5, rut=1.-smoothstep(.25,.55,abs(abs(lv)-.85));      // the wheel tracks of each lane
+        float lv=mod(x,lw)-lw*.5, wob=(fnA(vec2(u,v*.2),vec2(14.,6.),mpp)-.5)*.5;
+        float rut=1.-smoothstep(.2,.75,abs(abs(lv+wob)-.85));                            // the wheel tracks of each lane, wandering a little
         float gut=1.-smoothstep(.25,.7+.8*fnA(vec2(u,0.),vec2(6.,1.),mpp),c-av);          // slush banked in the gutters
-        float crown=minor*(.45+.4*fnA(vec2(u,v),vec2(9.,1.5),mpp))*(1.-rut);            // packed snow between the ruts on side streets
-        float sl=W*clamp(gut*(.6+.4*fnA(vec2(u,v),vec2(3.,.6),mpp))+crown,0.,1.);
-        col=mix(asp, mix(SLUSH, SNOW*.8, minor*.5+.3*fnA(vec2(u,v),vec2(2.,.5),mpp)), sl);
-        col*=1.-.15*rut*(1.-sl);
+        float crown=minor*.75*smoothstep(.3,.8,fnA(vec2(u,v),vec2(12.,2.),mpp))*(1.-.75*rut);   // packed snow left between the ruts on side streets
+        float sl=W*clamp(gut*(.6+.4*fnA(vec2(u,v),vec2(3.,.6),mpp))+crown+.12*minor*rut,0.,1.);
+        col=mix(asp, mix(SLUSH, SNOW*.78, minor*.5+.3*fnA(vec2(u,v),vec2(2.,.5),mpp)), sl);
+        col*=1.-.1*rut*(1.-sl);
         col*=1.-.35*box1(c-av,fv,0.,.1);                                              // the kerb's shadow line
         wet=W*(1.-sl)*(.75+.25*rut)+(1.-W)*.05;
         // worn lane lines on the main roads (centre solid on the wide ones), dashed centre on the smaller through roads
@@ -208,7 +210,6 @@ export default function create(ctx) {
         e=vE.x*.25; float z=pulse(u,fu,0.,.5,1.)*box1(av,fv,-e,e-.2);
         col=vec3(.6,.6,.58); al=z*.6*(1.-.5*W*fn(q*2.,1.2,mpp));
       }
-      if(uDbg>.5){ col=fract(vec3(kind*.37,kind*.61+pass*.3,kind*.13+.2*urban)); al=max(al,.6); }    // debug: colour by kind
       vec3 L=normalize(uRegionSun), lit=winterLight(up,up,L);
       col*=lit;
       // wet surfaces mirror the pale sky and catch the low sun
@@ -226,7 +227,7 @@ export default function create(ctx) {
     }`;
   const baseMat = new THREE.ShaderMaterial({
     uniforms: { ...uni, uOrigin: { value: new V3() }, uEast: { value: new V3() }, uNorth: { value: new V3() }, uBox: { value: new THREE.Vector4() },
-      uFade: { value: 0 }, uPull: { value: .003 }, uDbg: { value: 0 }, uFar0: { value: FAR0 }, uFar1: { value: FAR1 } },
+      uFade: { value: 0 }, uPull: { value: .003 }, uFar0: { value: FAR0 }, uFar1: { value: FAR1 } },
     vertexShader: VS, fragmentShader: FS, depthWrite: false, depthTest: true, transparent: false,
     blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     extensions: { derivatives: true },
@@ -236,7 +237,7 @@ export default function create(ctx) {
   // layers, drawn in this order inside one mesh: squares, rail beds, paths, road floors, pedestrian streets,
   // carriageways (small roads first), then tram rails and crossings on top
   const layerOf = (kind, pass) => kind >= 30 ? 0 : kind === 21 ? 1 : kind >= 10 && kind <= 14 ? 2 : kind <= 8 && pass === 0 ? 3 : kind === 9 ? 4 : pass === 1 ? 5 + (8 - kind) / 10 : 7;
-  function buildSub(S, buf) {
+  async function buildSub(S, buf) {
     const { ox, oy, kx, ky } = S, dv = new DataView(buf.buffer, buf.byteOffset + S.off, S.lb + S.pb);
     const latOf = y => oy + y / ky, lonOf = x => ox + x / kx;
     let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
@@ -261,7 +262,9 @@ export default function create(ctx) {
     }
     let o = 0, nLines = 0, seed = 7;
     const rnd = () => (seed = (seed * 16807) % 2147483647) % 256;
+    let tSlice = performance.now();
     while (o < S.lb) {
+      if (performance.now() - tSlice > 10) { await new Promise(r => setTimeout(r, 0)); tSlice = performance.now(); }   // no long stall
       const kind = dv.getUint8(o), flags = dv.getUint8(o + 1), w = dv.getUint8(o + 2) / 4, n = dv.getUint16(o + 4, true), nw = dv.getUint16(o + 6, true);
       let x = dv.getInt16(o + 8, true), y = dv.getInt16(o + 10, true); o += 12;
       const pts = [[x / 2, y / 2]];
@@ -313,24 +316,26 @@ export default function create(ctx) {
         const a = st[0], b = st[st.length - 1];
         a[0] -= a[3] * ext; a[1] -= a[4] * ext; a[2] = -ext; b[0] += b[3] * ext; b[1] += b[4] * ext; b[2] += ext;
       }
-      const strip = (pass, widths) => {          // widths(station) -> [left, right]; three columns: left edge, centre, right edge
+      // widths(station) -> [left, right]; columns: left edge, (centre: wide floors, so they follow the ground), right edge
+      const strip = (pass, widths, mid) => {
         const lay = layerOf(kind, pass); let prev = null;
         for (const q of st) {
           const [eL, eR] = widths(q[2]), nx = -q[4], ny = q[3], m = q[5];
           const el = Math.max(eL, .05), er = Math.max(eR, .05), r = reach(q[2]);
-          const ids = [vert(q[0] + nx * el * m, q[1] + ny * el * m, q[2], el, r[0], r[1], c, 0, kind, pass, flags, sd, nx, ny),
-            vert(q[0], q[1], q[2], 0, r[0], r[1], c, 0, kind, pass, flags, sd, nx, ny),
-            vert(q[0] - nx * er * m, q[1] - ny * er * m, q[2], -er, r[0], r[1], c, 0, kind, pass, flags, sd, nx, ny)];
-          if (prev) { tri(lay, prev[0], prev[1], ids[0]); tri(lay, ids[0], prev[1], ids[1]); tri(lay, prev[1], prev[2], ids[1]); tri(lay, ids[1], prev[2], ids[2]); }
-          prev = ids;
+          const L = vert(q[0] + nx * el * m, q[1] + ny * el * m, q[2], el, r[0], r[1], c, 0, kind, pass, flags, sd, nx, ny);
+          const C = mid ? vert(q[0], q[1], q[2], 0, r[0], r[1], c, 0, kind, pass, flags, sd, nx, ny) : -1;
+          const Rr = vert(q[0] - nx * er * m, q[1] - ny * er * m, q[2], -er, r[0], r[1], c, 0, kind, pass, flags, sd, nx, ny);
+          if (prev && mid) { tri(lay, prev[0], prev[1], L); tri(lay, L, prev[1], C); tri(lay, prev[1], prev[2], C); tri(lay, C, prev[2], Rr); }
+          else if (prev) { tri(lay, prev[0], prev[2], L); tri(lay, L, prev[2], Rr); }
+          prev = [L, C, Rr];
         }
       };
-      if (kind <= 8) { if (!(flags & 32)) strip(0, s => reach(s)); strip(1, () => [c, c]); }   // driveways and car park aisles: no kerb
-      else if (kind === 9) strip(0, s => reach(s));
+      if (kind <= 8) { if (!(flags & 32)) strip(0, s => reach(s), true); strip(1, () => [c, c], c > 5); }   // driveways and car park aisles: no kerb
+      else if (kind === 9) strip(0, s => reach(s), true);
       else if (kind === 20) strip(2, () => [1.45, 1.45]);
       else if (kind === 21) strip(0, () => [1.7, 1.7]);
       else if (kind === 22) strip(2, () => [w / 2, w / 2]);
-      else strip(0, () => [w / 2, w / 2]);
+      else strip(0, () => [w / 2, w / 2], w > 8);
     }
     // polygons: triangles split until they follow the terrain, rim 0 on the outline
     const LIM = lite ? 45 : 30;
@@ -380,8 +385,8 @@ export default function create(ctx) {
     for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
     const meshes = [];
     for (const S of J.subs) {
-      await new Promise(r => setTimeout(r, 0));                               // one sub-area per task: no long stall
-      const m = buildSub(S, buf); if (m) meshes.push(m);
+      await new Promise(r => setTimeout(r, 0));                               // a breath between sub-areas
+      const m = await buildSub(S, buf); if (m) meshes.push(m);
     }
     corner.clear();
     return meshes;

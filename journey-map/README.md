@@ -45,6 +45,15 @@ the file directly from disk won't load the map data).
   sensible default elsewhere, built along each building's ridge line; tower
   and spire parts are drawn separately; tagged roof and wall colours are used.
   Snow sits on the pitched roofs in winter.
+- Streets in the stop towns (Munich, Innsbruck, Nuremberg, Füssen and
+  Hohenschwangau, Kufstein, Rattenberg) from the Overture / OpenStreetMap
+  street network: wet, snow-cleared asphalt with slush in the gutters and worn
+  lane lines, granite kerbs and pavements out to the house fronts, pale granite
+  setts in the pedestrian zones and squares (Kaufingerstraße and Marienplatz,
+  Maria-Theresien-Straße, the Hauptmarkt), tram rails, snowy tracks at the
+  stations and worn paths through the snow (`js/streets.js`,
+  `tools/streets_pack.py`). Up close they make the ground between the houses
+  crisp; a few kilometres out they fade back into the imagery.
 - 20 m terrain relief along the routes (Mapzen/AWS terrarium, zoom 13) baked
   into per-leg relief maps, so ridges and gullies light correctly up close.
 - Trees by species and place: slender Norway spruce and silver fir with snow
@@ -57,9 +66,8 @@ the file directly from disk won't load the map data).
 - Close to the camera each forest point grows into a small stand of trees;
   further out the trees get simpler, so the forests stay light on phones.
 - Hand-built landmarks at their true size on their real footprints, in place of
-  the plain blocks there: Frauenkirche, Neues Rathaus, Alter Peter and
-  St. Michael in Munich; Dom St. Jakob, Hofkirche, Goldenes Dachl and Bergisel
-  in Innsbruck; Kaiserburg, St. Lorenz and the Frauenkirche in Nuremberg;
+  the plain blocks there: every stop of the Munich and Innsbruck walks (see
+  below); Kaiserburg, St. Lorenz and the Frauenkirche in Nuremberg;
   Neuschwanstein, Hohenschwangau, the Wieskirche and Kufstein fortress. Brick,
   sandstone, plaster, copper, slate and tile surfaces with tracery windows and
   clocks, lit and shadowed like the other buildings; the castles stand on their
@@ -67,6 +75,21 @@ the file directly from disk won't load the map data).
 - The Munich Frauenkirche in detail: the 109 m brick hall under its huge roof,
   tall lancet windows between flat strips, the polygonal choir, and the two
   99 m towers with clocks, octagonal belfries and green copper domes.
+- Munich's old-town walk: the Neues Rathaus front on Marienplatz with its
+  pointed gables, pinnacles, statues and dormers, the corner oriel and the
+  85 m tower with the Glockenspiel bay and its figures; the white Altes Rathaus
+  with its pinnacled gable and the gate tower's four corner turrets; Alter
+  Peter's broad tower with its clocks, gallery and stacked copper lantern helm;
+  Heilig-Geist, the Mariensäule with its gilded Virgin, St. Michael's show front
+  of statue niches and scrolled gables, and the narrow Bürgersaal and
+  Asamkirche fronts between the houses.
+- Innsbruck's walk: the Goldenes Dachl with its open loggias and gilded roof
+  on the Neuhof, the Rococo Helblinghaus, the Stadtturm with its gallery and
+  onion, the Ottoburg's oriels and red-and-white shutters, Dom St. Jakob, the
+  Hofkirche and the long Hofburg with its domed towers, and the Bergisel jump:
+  Zaha Hadid's tower and head, the inrun, the snowy landing hill and the
+  stands, on a wooded hill modelled back where the elevation data had smoothed
+  it away.
 - Phone layout: the camera frames the action in the space between the header
   and the card, and wide shots pull back further on narrow screens.
 

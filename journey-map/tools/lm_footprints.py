@@ -55,10 +55,19 @@ LM = {
   'rathaus':         dict(at=(48.13760, 11.57590), names=['Neues Rathaus']),
   'alterPeter':      dict(at=(48.13665, 11.57580), names=['St. Peter']),
   'stMichael':       dict(at=(48.13880, 11.57060), names=['Sankt Michael']),
+  'altesRathaus':    dict(at=(48.13682, 11.57706), names=['Altes Rathaus', 'Talbrucktor']),     # (sic: the Talburgtor)
+  'heiliggeist':     dict(at=(48.13619, 11.57740), names=['Heilig Geist']),
+  'mariensaeule':    dict(at=(48.13721, 11.57548), none=1),
+  'buergersaal':     dict(at=(48.13903, 11.56826), names=['Bürgersaalkirche']),
+  'asamkirche':      dict(at=(48.13521, 11.56952), names=['Sankt Johann Nepomuk'], context=22),
   'domIbk':          dict(at=(47.26880, 11.39365), names=['Dom zu St. Jakob']),
   'hofkirche':       dict(at=(47.26810, 11.39540), names=['Hofkirche (Schwarzmanderkirche)']),
-  'goldenesDachl':   dict(at=(47.26857, 11.39328), parts=[('Goldenes Dachl', 0), (None, 6)], context=20),
-  'bergisel':        dict(at=(47.24686, 11.39981), none=1),
+  'goldenesDachl':   dict(at=(47.2687052, 11.3932178), names=[], extra=[(0, 0)], context=14),     # the whole Neuhof with its oriel
+  'helbling':        dict(at=(47.2684031, 11.3929166), names=[], extra=[(0, 0)], context=12),
+  'stadtturm':       dict(at=(47.26823, 11.39345), names=['Stadtturm'], context=14),
+  'ottoburg':        dict(at=(47.26848, 11.39200), names=['Ottoburg'], context=16),
+  'hofburg':         dict(at=(47.26907, 11.39464), names=['Hofburg']),
+  'bergisel':        dict(at=(47.24686, 11.39981), names=['Bergisel-Sprungschanze'], context=260),   # context: the grandstands
   'neuschwanstein':  dict(near=25, at=(47.55760, 10.74930), poly=[(-60, -55), (40, -45), (95, 0), (85, 40), (50, 35), (-10, 20), (-60, -10)]),
   'hohenschwangau':  dict(near=25, at=(47.55530, 10.73620), poly=[(-45, 0), (75, 0), (75, 70), (-45, 70)]),
   'kufstein':        dict(near=25, at=(47.58150, 12.16850), poly=[(-30, -115), (75, -115), (80, 0), (70, 85), (30, 85), (15, 62), (-12, 40), (-25, 15), (-20, -60)]),
@@ -154,7 +163,9 @@ for name, s in LM.items():
     for tag, i, r in BX + PX:
       g = geom(r)
       if g is None or f'{tag}{i}' in ids or not near(g, s['context']) or g.area * kx * K < 40: continue
-      rs.append(dict(rec_out(tag, i, r, local(g, la0, lo0)), ctx=1))
+      gl = local(g, la0, lo0)                              # each piece of a multipolygon its own record (grandstands)
+      for k, q in enumerate(gl.geoms if gl.geom_type == 'MultiPolygon' else [gl]):
+        if q.area > 40: rs.append(dict(rec_out(tag, i, r, q), ctx=1, **({'id': f'{tag}{i}.{k}'} if k else {})))
   mrings = [] if mask is None else [ring_out(m.exterior, True) for m in (mask.geoms if mask.geom_type == 'MultiPolygon' else [mask])]
   d = dict(lat=round(la0, 7), lon=round(lo0, 7), mask=[[[round(x, 1), round(y, 1)] for x, y in m] for m in mrings], parts=rs)
   if main: d['ang'], d['L'], d['W'] = rs[recs.index(main)]['ang'], rs[recs.index(main)]['L'], rs[recs.index(main)]['W']
