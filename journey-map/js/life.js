@@ -198,11 +198,12 @@ export default function create(ctx) {
   const markets = [];                        // { tag, group, origin }
   function buildMarkets() {
     const tags = new Map();
-    for (const h of data.huts) { if (!tags.has(h[3])) tags.set(h[3], { huts: [], trees: [], strands: [] }); tags.get(h[3]).huts.push(h); }
-    for (const t of data.trees) tags.get(t[3])?.trees.push(t);
-    for (const s of data.strands) tags.get(s[2])?.strands.push(s);
+    const of = tag => { if (!tags.has(tag)) tags.set(tag, { huts: [], trees: [], strands: [] }); return tags.get(tag); };
+    for (const h of data.huts) of(h[3]).huts.push(h);
+    for (const t of data.trees) of(t[3]).trees.push(t);
+    for (const s of data.strands) of(s[2]).strands.push(s);
     for (const [tag, T] of tags) {
-      const [la0, lo0] = T.huts[0], origin = llv(la0, lo0, meshKm(la0, lo0)), group = new THREE.Group(), lights = [];
+      const [la0, lo0] = T.huts[0] || T.trees[0] || T.strands[0][0], origin = llv(la0, lo0, meshKm(la0, lo0)), group = new THREE.Group(), lights = [];
       group.position.copy(origin); const mat = matAt(origin);
       const huts = new THREE.InstancedMesh(hutGeo, mat, T.huts.length), vars = new Float32Array(T.huts.length);
       const K = .0015;                       // 1.5x so they read from a few hundred metres up
@@ -217,7 +218,7 @@ export default function create(ctx) {
         lights.push([tmp2.copy(p).addScaledVector(AY, 1.4 * K).addScaledVector(AZ, 1.5 * K).clone(), WARM, 1.6]);   // glow spilling from the counter
       });
       huts.geometry = hutGeo.clone(); huts.geometry.setAttribute('aVar', new THREE.InstancedBufferAttribute(vars, 1));
-      huts.frustumCulled = false; group.add(huts);
+      huts.frustumCulled = false; if (T.huts.length) group.add(huts, crowd(T.huts, origin));
       if (T.trees.length) {
         const trees = new THREE.InstancedMesh(treeGeo.clone(), mat, T.trees.length), tv = new Float32Array(T.trees.length);
         T.trees.forEach(([la, lo, h], i) => {
@@ -240,7 +241,7 @@ export default function create(ctx) {
         const len = pa.distanceTo(pb) * 1000, n = Math.max(4, Math.round(len / (lite ? 1.6 : .9)));
         for (let k = 0; k <= n; k++) { const f = k / n; lights.push([pa.clone().lerp(pb, f).addScaledVector(up, -.0012 * 4 * f * (1 - f)), BULB, .45]); }
       }
-      group.add(lightsMesh(lights, origin), crowd(T.huts, origin));
+      group.add(lightsMesh(lights, origin));
       root.add(group); markets.push({ tag, group, origin });
     }
   }
@@ -274,7 +275,7 @@ export default function create(ctx) {
     transparent: true, depthWrite: false,
     vertexShader: `attribute vec3 aBase; attribute vec4 aP; uniform float uT, uShow, uK; uniform vec3 uUp, uWind; varying vec2 vUv; varying float vAge, vA, vSeed;
       void main(){
-        float age=fract(uT/aP.w+aP.x), k=uK;
+        float age=fract(uT/aP.w+aP.x), k=uK*clamp(sqrt(-(modelViewMatrix*vec4(aBase,1.)).z/.3),1.,1.7);   // widen a little from afar so a plume still reads
         vec3 side=normalize(cross(uUp,uWind));
         float sw=sin(uT*.6+aP.z*40.+age*4.);
         vec3 c=aBase+uUp*(.6+19.*pow(age,.75))*k+uWind*(.3+16.*age*age)*k+side*sw*(.4+3.*age)*k;
@@ -301,7 +302,7 @@ export default function create(ctx) {
   let smoke = null, chims = null;
   function buildSmoke(name) {
     if (smoke) { root.remove(smoke); smoke.geometry.dispose(); smoke = null; }
-    if (chims) { root.remove(chims); chims.geometry.dispose(); chims = null; }
+    if (chims) { root.remove(chims); chims.geometry.dispose(); chims.material.dispose(); chims = null; }
     const list = (data.smoke[name] || []).filter((_, i) => !lite || i % 2 === 0);
     if (!list.length) return;
     const [la0, lo0] = list[0], origin = llv(la0, lo0, meshKm(la0, lo0)), f = enu(origin);
@@ -462,7 +463,7 @@ export default function create(ctx) {
       if (want && !H.flock && used() + H.n <= MAXB) { H.flock = makeFlock(frameAt(hp), H.kind, H.n, homePath(H)); H.flock.home = H; flocks.push(H.flock); }
       if (H.flock) H.flock.on = want;
     }
-    if (show && d < 7 && (sweepIn -= dt) < 0) { sweepIn = 22 + rnd() * 30; spawnSweep(); }
+    if (show && d < 9 && (sweepIn -= dt) < 0) { sweepIn = 22 + rnd() * 30; spawnSweep(); }
     let k = 0;
     for (let i = flocks.length - 1; i >= 0; i--) {
       const fl = flocks[i];
@@ -606,9 +607,12 @@ export default function create(ctx) {
     root.visible = !cityOn && !ctx.city;
     if (!root.visible) return;
     const T = ctx.cam.target, d = ctx.cam.dist, cp = camera.position;
-    for (const m of markets) m.group.visible = d < 12 && cp.distanceTo(m.origin) < 9 && (m.tag === 'ibk' || before24);
+    for (const m of markets) m.group.visible = d < 12 && cp.distanceTo(m.origin) < 9 && (before24 || m.tag !== 'muc' && m.tag !== 'ibkm');
     lightMat.uniforms.uShow.value = 1 - smooth(6, 11, d); if (!reduceMotion) crowdMat.uniforms.uT.value = ctx.time;
-    if (smoke) { const s = 1 - smooth(5, 9, d); smokeMat.uniforms.uShow.value = s; if (!reduceMotion) smokeMat.uniforms.uT.value = ctx.time; smoke.visible = s > .01 && cp.distanceTo(smoke.position) < 40; chims.visible = smoke.visible; }
+    if (smoke) {                              // plumes span a whole leg's towns; each puff fades with its own distance
+      const s = (1 - smooth(5, 9, d)) * ctx.winter; smokeMat.uniforms.uShow.value = s; if (!reduceMotion) smokeMat.uniforms.uT.value = ctx.time;
+      smoke.visible = s > .01; chims.visible = d < 9;
+    }
     anchor(T);
     updateBirds(dt); updateFowl(dt); updateFlakes(dt);
   }

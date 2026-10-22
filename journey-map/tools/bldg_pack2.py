@@ -114,7 +114,7 @@ def inside_other(P,own):
   ok=gi!=own[pi]; np.maximum.at(out,pi[ok],H[gi[ok]]); return out
 ts=np.array([.2,.5,.8]); hits=np.zeros(len(A))
 for t in ts:
-  P=A+D*t+Nrm*.9; hits+=inside_other(P,E_own)>=np.minimum(.6*H[E_own],H[E_own]-1.5)
+  P=A+D*t+Nrm*.9; io=inside_other(P,E_own); hits+=(io>0)&(io>=np.minimum(.6*H[E_own],H[E_own]-1.5))   # a neighbour of at least similar height
 party=hits>=2
 print('edges',len(A),'party',party.sum())
 SBOX=[(11.548,11.600,48.124,48.150),(11.375,11.412,47.255,47.278),(11.064,11.094,49.444,49.462),(10.690,10.712,47.562,47.575),(11.500,11.515,47.278,47.286),(12.155,12.180,47.575,47.592),(11.890,11.898,47.436,47.442)]

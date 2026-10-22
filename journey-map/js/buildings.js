@@ -1,18 +1,18 @@
 // 3D buildings from Overture / OpenStreetMap footprints: walls with procedural facades in each region's style, real roof
 // shapes with eaves, tiles and snow, chimneys and dormers, towers and spires.
-// create(ctx) returns { buildBuildings(buffer, meta) -> Promise<THREE.Mesh> }.
+// Buildings cast sun shadows on each other and on the ground near the camera (WebGL2).
+// create(ctx) returns { buildBuildings(buffer, meta) -> Promise<THREE.Mesh>, update(dt), onCity(on) }.
 export default function create(ctx) {
   const { THREE, V3, uni, HAZE, LIGHT, NOISE, D2R, BHS, llv, meshKm, phone, renderer, scene, cam, clamp } = ctx;
   const SHADOWS = renderer.capabilities.isWebGL2, SM = phone() ? 1024 : 2048, SHADOW_LAYER = 7;
-  const SHADOW_GLSL = SHADOWS ? `#define SHADOWS
-    precision highp sampler2DShadow;
+  const SHADOW_GLSL = SHADOWS ? `precision highp sampler2DShadow;
     uniform sampler2DShadow uShadow; uniform float uShadowOn, uShadowTexel; varying vec3 vS;
     // sun visibility from the buildings' depth map: 4 hardware-filtered taps, slope-scaled bias, fading out at the map's edge
     float sunVis(float ndl){
       if(uShadowOn<.01||ndl<=0.||any(lessThan(vS.xy, vec2(0.)))||any(greaterThan(vS.xy, vec2(1.)))) return 1.;
       float tn=sqrt(max(1.-ndl*ndl, 0.))/max(ndl, .12), b=(.35+uShadowTexel*(.8+1.2*min(tn, 5.)))*8.4e-5, t=.5/${SM}.;
-      float v=texture(uShadow, vec3(vS.xy+vec2(-t, -t), vS.z-b))+texture(uShadow, vec3(vS.xy+vec2(t, -t), vS.z-b))
-             +texture(uShadow, vec3(vS.xy+vec2(-t, t), vS.z-b))+texture(uShadow, vec3(vS.xy+vec2(t, t), vS.z-b));
+      float v=textureLod(uShadow, vec3(vS.xy+vec2(-t, -t), vS.z-b), 0.)+textureLod(uShadow, vec3(vS.xy+vec2(t, -t), vS.z-b), 0.)
+             +textureLod(uShadow, vec3(vS.xy+vec2(-t, t), vS.z-b), 0.)+textureLod(uShadow, vec3(vS.xy+vec2(t, t), vS.z-b), 0.);
       vec2 e=min(vS.xy, 1.-vS.xy); return mix(1., v*.25, uShadowOn*smoothstep(0., .1, min(e.x, e.y)));
     }` : `float sunVis(float ndl){ return 1.; }`;
   // Per vertex: aP = facade coordinates in 1/16 m (walls: metres along the face, height; roofs: along the eave, down the slope),
@@ -36,7 +36,6 @@ export default function create(ctx) {
     float pulse(float x, float f, float a, float w, float P, float lo, float hi){
       float x0=clamp(x-.5*f, lo, hi)-lo, x1=clamp(x+.5*f, lo, hi)-lo; return (Fp(x1, a, w, P)-Fp(x0, a, w, P))/f; }
     float box(float x, float f, float a, float b){ return clamp((min(x+.5*f, b)-max(x-.5*f, a))/f, 0., 1.); }
-    vec3 lin(vec3 c){ return c*c*(c*.3+.7); }
     vec3 shutterCol(float i){ return i<.5?vec3(.055,.15,.07):i<1.5?vec3(.04,.10,.055):i<2.5?vec3(.15,.07,.035):vec3(.20,.045,.03); }
     vec3 timberCol(float i){ return i<.5?vec3(.05,.03,.02):i<1.5?vec3(.15,.035,.022):i<2.5?vec3(.035,.03,.028):vec3(.10,.055,.03); }
     void main(){
@@ -114,11 +113,15 @@ export default function create(ctx) {
           if(nb<1.5&&Lf<3.8) m=(Lf-min(Lf*.4, 1.2))*.5-.3;
           float P=(Lf-2.*m)/max(nb, 1.), ww=min(modern>.5?P*.62:style>4.5&&style<5.5?1.0:1.18, P*.45);
           float wh=clamp(fl*.43, .85, 1.5), sill=(fl-wh)*.4;
-          float a0=(P-ww)*.5, lo=m, hi=Lf-m;
+          float a0=(P-ww)*.5, lo=m, hi=Lf-m, g0=shop+arc>.5?0.:1.;
+          if(min(fu, fh)>3.6){
+            // far away every pattern has averaged out: just the mean of plaster, frames and glass
+            float wf=(1.-party)*(ww/P)*mix(g0*.4+(1.-g0)*.5, wh/fl, step(g, h))*step(h, top);
+            col=mix(mix(col, trimC, (1.-party)*.1*trim), glassC, wf); winF=wf;
+          } else {
           float cg=pulse(u, fu, a0, ww, P, lo, hi), cf=pulse(u, fu, a0-.15, ww+.3, P, lo, hi);
           float sw=min(ww*.5, a0-.17), cs=sw<.15?0.:pulse(u, fu, a0-.15-sw, sw, P, lo, hi)+pulse(u, fu, a0+ww+.15, sw, P, lo, hi);
           float yg=pulse(h, fh, sill, wh, fl, g, g+(F-1.)*fl), yf=pulse(h, fh, sill-.22, wh+.36, fl, g, g+(F-1.)*fl);
-          float g0=shop+arc>.5?0.:1.;
           float yg0=g0*box(h, fh, 1.05, 1.05+min(wh, g-1.5)), yf0=g0*box(h, fh, .85, 1.2+min(wh, g-1.5));
           if(F<1.5){ yg=0.; yf=0.; yg0=g0*box(h, fh, max(.9, E*.3), max(.9, E*.3)+min(wh, E*.45)); yf0=yg0; }
           float gw=gableF*box(u, fu, Lf*.5-.55, Lf*.5+.55)*box(h, fh, E+.9, E+.9+wh*.8);   // a window up in the gable
@@ -129,7 +132,7 @@ export default function create(ctx) {
           // per-window variation: some lit warm from inside (it is Christmas), some with curtains
           float wi=floor((u-lo)/P), fi=floor((h-g)/fl), rw=hh(vec2(wi+seed*3.1, fi+seed*.37));
           float warm=step(.84, rw)*(1.-modern*.6);
-          vec3 gc=glassC+vec3(.012, .01, .008)*step(.5, rw);
+          vec3 gc=glassC*(.7+.6*fract(rw*7.3))+vec3(.03, .028, .024)*step(.62, fract(rw*3.7));
           if(timber>.5&&(style>3.5&&style<4.5||style>5.5)&&h>g){
             // Franconian half-timbering: posts at the bay lines, rails at each floor, braces beside the windows
             vec3 tc=timberCol(bn(acc, 2., 2.));
@@ -186,6 +189,7 @@ export default function create(ctx) {
             col=mix(col, trimC, box(u, fu, Lf*.5-.78, Lf*.5+.78)*box(h, fh, 0., 2.5)*det);
             col=mix(col, vec3(.09, .05, .03), dd);
           }
+          }
         }
         // shadow of the eaves on sunlit walls, and darker street canyons near the ground
         float lh=max(dot(L, n), .03), drop=min(ov*max(dot(L, up), 0.)/lh+.15, 3.);
@@ -211,20 +215,20 @@ export default function create(ctx) {
         // snow: deep on gentle slopes, sliding off steep ones, broken up at the edges, with a bright lip along the eaves
         float slope=kind>4.5?1.:smoothstep(.36, .6, ny);
         float cover=uWinter*snowK*slope;
-        float sm;
+        float sm; vec3 snow=vec3(.86, .89, .94)*(.96+.08*vnoise(vec3(a*.5, r*.5, seed)))*(1.-.07*row*det*step(kind, 1.5));
         if(kind<1.5){
           // a sheet of snow from the ridge down to a ragged lower edge (where it has slid or melted), the odd hole when thin,
           // and snow lingering in the tile rows below it
           float rag=(vnoise(vec3(a*.55, seed, 1.))-.5)*1.3+(vnoise(vec3(a*2.1, seed, 4.))-.5)*.45;
           float rm=re*(cover*1.15-.12)+rag, fe0=max(fr, .02);
-          sm=(1.-smoothstep(rm-.5*fe0-.04, rm+.5*fe0+.04, r))*smoothstep(.22, .42, vnoise(vec3(a*.8, r*.8, seed*3.))+cover*.75)*step(.04, cover);
+          sm=(1.-smoothstep(rm-.5*fe0-.04, rm+.5*fe0+.04, r))*smoothstep(.15, .35, vnoise(vec3(a*.35, r*.35, seed*3.))+cover*.9)*step(.04, cover);
           col=mix(col, vec3(.84, .87, .92), uWinter*.45*(1.-sm)*mix(.2, row*1.6, det)*step(.2, snowK));
         } else {
-          sm=smoothstep(.3, .5, cover*(.62+.5*vnoise(vec3(a*.12, r*.12, seed))));
+          float dr=vnoise(vec3(a*.12, r*.12, seed));                              // flat roofs hold their snow: drifts, no bare patches
+          sm=uWinter*step(.04, snowK)*smoothstep(.1, .3, snowK+dr*.4); snow*=.95+.07*dr;
           float pr=1.-smoothstep(.28-.5*fu, .28+.5*max(fu, fh), re);              // parapet coping, with a shadow line inside it
           sm*=1.-pr; col=mix(col, vec3(.30, .29, .28), pr); col*=1.-.3*box(re, max(fu, fh), .28, .42)*(1.-pr);
         }
-        vec3 snow=vec3(.86, .89, .94)*(.96+.08*vnoise(vec3(a*.5, r*.5, seed)));
         if(kind<1.5){
           // the roof's edge: a dark fascia line, a strip of bare tiles along the eaves where the snow has slid, a bright snow lip above it
           float de=min(re-r, ve-abs(a)), fe=max(fr, fa);
@@ -361,7 +365,7 @@ export default function create(ctx) {
   function makeBuf() {
     let cap = 1 << 18, icap = 1 << 19;
     const B = { n: 0, ni: 0, pos: new Float32Array(cap * 3), ap: new Int16Array(cap * 2), af: new Uint16Array(cap * 4), ac: new Uint8Array(cap * 4), idx: new Uint32Array(icap) };
-    const grow = (a, k) => { const b = new a.constructor(a.length * 2); b.set(a); return b; };
+    const grow = a => { const b = new a.constructor(a.length * 2); b.set(a); return b; };
     B.need = (nv, ni) => {
       while (B.n + nv > cap) { cap *= 2; B.pos = grow(B.pos); B.ap = grow(B.ap); B.af = grow(B.af); B.ac = grow(B.ac); }
       while (B.ni + ni > icap) { icap *= 2; B.idx = grow(B.idx); }
@@ -476,7 +480,15 @@ export default function create(ctx) {
         { cut: [hp(-1, 0, 0), hp(-1, -1, -dd), hp(-1, 1, -dd)], z: p => eave + rh * (hl + toV(p)) / hw, ar: p => [toW(p), (-toV(p) - dd) * kk] }];
       else if (type === RT.SKILLION) { const k2 = Math.sqrt(1 + (rh / (2 * hw)) ** 2); regions = [{ cut: [], z: p => eave + rh * (toW(p) + hw) / (2 * hw), ar: p => [toV(p), (hw - toW(p)) * k2] }]; }
       else regions = [{ cut: [], z: () => pitched ? eave : (rh ? eave : hM), ar: p => [toV(p), toW(p)], flat: 1 }];
-      const roofZ = p => { let z = Infinity; for (const r of regions) { if (r.cut.every(([a, b, c]) => a * p[0] + b * p[1] + c >= -1e-6)) z = Math.min(z, r.z(p)); } return z === Infinity ? eave : z; };
+      const roofZ = p => {
+        let z = Infinity;
+        for (let q = 0; q < regions.length; q++) {
+          const r = regions[q], cut = r.cut; let ok = true;
+          for (let k = 0; k < cut.length && ok; k++) ok = cut[k][0] * p[0] + cut[k][1] * p[1] + cut[k][2] >= -1e-6;
+          if (ok) z = Math.min(z, r.z(p));
+        }
+        return z === Infinity ? eave : z;
+      };
       const E16 = Math.round(eave * 16);
       // ---- walls: one strip per footprint edge (so windows centre on each face), broken where the roof line bends ----
       const lines = regions.flatMap(r => r.cut), bot = part && minH > 0 ? minH : -20;
@@ -490,11 +502,11 @@ export default function create(ctx) {
       for (let j = 0; j < n; j++) {
         const a = rm[j], b = rm[(j + 1) % n], ts = [0];
         const Le = Math.hypot(b[0] - a[0], b[1] - a[1]);
-        for (const [la, lb, lc] of lines) {
-          const fa = la * a[0] + lb * a[1] + lc, fb = la * b[0] + lb * b[1] + lc;
+        for (let k = 0; k < lines.length; k++) {
+          const ln = lines[k], fa = ln[0] * a[0] + ln[1] * a[1] + ln[2], fb = ln[0] * b[0] + ln[1] * b[1] + ln[2];
           if ((fa > 0) !== (fb > 0) && Math.abs(fa - fb) > 1e-9) { const t = fa / (fa - fb); if (t > .01 && t < .99) ts.push(t); }
         }
-        ts.push(1); ts.sort((p, q) => p - q);
+        ts.push(1); if (ts.length > 2) ts.sort((p, q) => p - q);
         const pts = ts.map(t => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]), zs = pts.map(roofZ);
         // drop breaks where the roof line runs straight through (hip ends)
         const keep = [0];
@@ -503,7 +515,8 @@ export default function create(ctx) {
           if (Math.abs(zs[k] - (z0 + (z2 - z0) * (ts[k] - t0) / (t2 - t0))) > .05) keep.push(k);
         }
         keep.push(pts.length - 1);
-        const party = isParty(j), zmax = Math.max(...zs), gable = zmax > eave + 2.7 && Le > 4.5 && !party;
+        let zmax = zs[0]; for (let k = 1; k < zs.length; k++) zmax = Math.max(zmax, zs[k]);
+        const party = isParty(j), gable = zmax > eave + 2.7 && Le > 4.5 && !party;
         const A = kindW | style << 3 | Math.min(31, floors) << 7 | party << 12 | (shopOK && isStreet(j) ? 1 << 13 : 0) | (isArc(j) ? 1 << 14 : 0) | (j === doorEdge ? 1 << 15 : 0);
         words(Math.round(Le * 16), ovc, E16, (gable ? 1 : 0) | (pitched && !party && zmax < eave + .3 ? 2 : 0), A, Bw);
         G.need(keep.length * 2, keep.length * 6);
@@ -705,7 +718,7 @@ export default function create(ctx) {
   const _p = new V3(), _q = new V3();
   function drape(T, half) {     // the receiver grid, in the local east/north plane round T, sat 2 m over the drawn terrain
     const up = T.clone().normalize(), east = new V3(up.z, 0, -up.x).normalize(), north = new V3().crossVectors(up, east);
-    const P = recvGeo.attributes.position.array, o = llv(Math.asin(up.y) / D2R, Math.atan2(up.x, up.z) / D2R, meshKm(Math.asin(up.y) / D2R, Math.atan2(up.x, up.z) / D2R));
+    const P = recvGeo.attributes.position.array, la0 = Math.asin(up.y) / D2R, lo0 = Math.atan2(up.x, up.z) / D2R, o = llv(la0, lo0, meshKm(la0, lo0));
     for (let j = 0; j < RN; j++) for (let i = 0; i < RN; i++) {
       _p.copy(T).addScaledVector(east, (i / (RN - 1) * 2 - 1) * half).addScaledVector(north, (j / (RN - 1) * 2 - 1) * half).normalize();
       const lat = Math.asin(_p.y) / D2R, lon = Math.atan2(_p.x, _p.z) / D2R;
