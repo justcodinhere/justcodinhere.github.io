@@ -587,6 +587,12 @@ const terrainMat = new THREE.ShaderMaterial({
       s*=mix(.22,1.,smoothstep(.6,.86,ne.z));
       float forest=1.-smoothstep(.035,.09,lum);
       s*=mix(1.,.28,forest*(1.-smoothstep(1650.,2050.,vH)));
+      // the foothills (the Allgäu, the Inn valley's sides) lie under snow at Christmas too: a lower, patchier snow line,
+      // thinner where the forest canopy hides the ground
+      float fl=760.+(nz-.5)*170.;
+      s=max(s,smoothstep(fl-90.,fl+90.,vH+fineH)*mix(.72,.3,forest)*smoothstep(.6,.88,ne.z)*(.8+.4*nz2));
+      // winter forests: the imagery's summer canopy goes grey-green (close up, the 3D trees carry the colour)
+      base=mix(base,vec3(lum)*vec3(.96,1.,.98),forest*.45*uWinter);
       s=max(s,uFrost*.45*(1.-forest)*smoothstep(.75,.95,ne.z));
       // close up, break the snow into drifts and let tree crowns show through
       s*=mix(1.,.8+.4*nz2,relW*(1.-smoothstep(4.,18.,dist)));
@@ -1397,7 +1403,7 @@ const POI = {
   lorenz: { lat: 49.4509, lon: 11.0786, t: 'St. Lorenz', x: 'Twin Gothic spires, about 80 m. Inside hangs Veit Stoss’s carved Angelic Salutation of 1517–18.' },
   hohensch: { d: .75, h: 150, lat: 47.5553, lon: 10.7364, t: 'Hohenschwangau', x: 'Ludwig II grew up in this yellow castle, rebuilt by his father Maximilian II in the 1830s.' },
   neusch: { d: .85, h: 140, lat: 47.5576, lon: 10.7498, t: 'Neuschwanstein', x: 'Begun in 1869 and never finished; Ludwig lived here only 172 days. It inspired Disney’s Sleeping Beauty Castle.' },
-  marienbr: { d: .95, h: 165, lat: 47.5550, lon: 10.7494, t: 'Marienbrücke', x: 'The classic castle view is from this bridge over the Pöllat gorge, but it is often closed in winter for ice and snow.' },
+  marienbr: { d: .36, h: 8, tilt: 74, look: [47.5576, 10.7498], lat: 47.5550, lon: 10.7494, t: 'Marienbrücke', x: 'The classic castle view is from this bridge over the Pöllat gorge, but it is often closed in winter for ice and snow.' },
 };
 const poiEl = document.getElementById('poi');
 let pins = [];
@@ -1738,6 +1744,7 @@ function buildJourney(geo, family = []) {
       from = to; prev = st;
     }
     if (!last) return true;               // the next sub-step picks up from here
+    if (o.parent) { cardText(o.parent); viewKey = ''; updateViewOffset(); }   // past the last sub-step's sight: the card is the leg's again
     if (o.roundTrip) {
       if (!await tour(o.tour, o.stop, 0, true)) return false;
       const back = o.roundTrip, mid = reground(back.p[0].clone().add(back.p[back.p.length - 1]));
@@ -1768,7 +1775,7 @@ function buildJourney(geo, family = []) {
       } : { ...step };
       part.chain = i < cuts.length - 2;
       part.routeFrom = c;
-      part.run = () => groundLeg(path, key, kind, { ...o, s0: c, s1: cuts[i + 1], focus });
+      part.run = () => groundLeg(path, key, kind, { ...o, s0: c, s1: cuts[i + 1], focus, parent: i ? step : null });
       return part;
     });
   }
@@ -1813,7 +1820,8 @@ async function tour(stops, base, rate = 1, partOfLeg = false) {
   if (!await enterCity(base)) return false;
   for (let i = 0; i < stops.length; i++) {
     const p = stops[i];
-    if (!await flyTo(stopView(p, p.h ?? (tcam.heading + 35) % 360), 2)) return false;   // h: from the open side (castles)
+    const at = p.look ? { ...p, lat: p.look[0], lon: p.look[1] } : p;      // look: frame that sight from this stop (the bridge's castle view)
+    if (!await flyTo(stopView(at, p.h ?? (tcam.heading + 35) % 360, p.d, p.tilt), 2)) return false;   // h: from the open side (castles)
     state.progress = (i + 1) / stops.length * (partOfLeg ? .15 : 1) + (partOfLeg ? .45 : 0);
     if (!await storyHold(p, `Stop ${i + 1} of ${stops.length}`, dt => { tcam.heading += (reduceMotion ? 0 : 3.6) * dt; })) return false;
   }
@@ -1827,10 +1835,12 @@ function orbitIdle(rate) { state.orbit = reduceMotion ? 0 : rate; }
 
 /* ---------- UI ---------- */
 const $ = id => document.getElementById(id);
-function renderUI() {
-  const s = STEPS[state.step];
+function cardText(s) {
   $('mode').dataset.mode = s.mode; $('mode').innerHTML = ICON[s.mode];
   $('eyebrow').textContent = s.eyebrow; $('title').textContent = s.title; $('meta').textContent = s.meta; $('note').textContent = s.note;
+}
+function renderUI() {
+  cardText(STEPS[state.step]);
   $('prev').disabled = state.step === 0;
   $('next').textContent = state.step === STEPS.length - 1 ? 'Start over ↺' : (phone() ? 'Next →' : 'Next leg →');
   [...$('dots').children].forEach((d, i) => {
