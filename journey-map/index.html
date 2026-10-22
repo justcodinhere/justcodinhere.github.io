@@ -231,6 +231,15 @@
     .dots::-webkit-scrollbar { display: none; }
     .credit { display: none; }
   }
+  /* landscape phones: the journey card and the story card side by side along the bottom, the map above them */
+  @media (min-width: 641px) and (max-height: 460px) {
+    .dock { justify-content: flex-start; }
+    .card { max-width: calc(60vw - 102px); padding: 10px 12px 8px; gap: 6px; }
+    .poi { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); width: min(340px, 40vw); max-height: calc(100vh - 90px); overflow-y: auto; }
+    .note { font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .dots { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-block: 1px; }
+    .dots::-webkit-scrollbar { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -554,6 +563,16 @@ const terrainMat = new THREE.ShaderMaterial({
         else { vec2 li=dLi*(62./64.)+1./64.; dc=texture2D(detMid,vec2((dSlot.x+li.x)/uMidAtlas.x, 1.-(dSlot.y+1.-li.y)/uMidAtlas.y)).rgb; }
         base=mix(base,dc,detW);
       }
+      // the imagery is draped from straight above, so on a steep face each texel smears down the slope: close up, break
+      // it with 3D detail that stays square on the face (crown clumps where it is dark, ledges where it is bare)
+      float sk=smoothstep(.12,.35,steep)*(1.-smoothstep(3.,8.,dist));
+      if(sk>.01){
+        vec3 q3=vec3(vUv*vec2(6530.,10370.),(vH+fineH)*${(EXAG / 30).toFixed(4)});       // 30 m cells, heights exaggerated
+        float f2=1.-smoothstep(.12,.3,length(fwidth(q3.xy)));                            // the 12 m octave only while it spans pixels
+        float c1=vnoise(q3), c2=mix(.5,vnoise(q3*2.5+5.),f2), led=vnoise(vec3(q3.xy*.5,q3.z*3.)+9.);
+        float dark=1.-smoothstep(.03,.07,dot(base,vec3(.2126,.7152,.0722)));
+        base*=mix(1.,mix(.78+.3*led+.25*(c2-.5),.7+.45*c1+.35*(c2-.5),dark),sk);
+      }
       base*=1.5;
       float lum=dot(base,vec3(.2126,.7152,.0722));
       base=pow(base,vec3(1.08));
@@ -632,7 +651,7 @@ function buildTerrain() {
 }
 
 /* ---------- detail packs: 10 m imagery + buildings per leg, swapped behind the clouds ---------- */
-const packs = {}; let activePack = null;
+const packs = {}, retiredTex = []; let activePack = null;
 async function loadPack(name) {
   const [atlas, idx, meta, relief, mid] = await Promise.all([
     loadTex(`assets/packs/${name}.jpg`), loadTex(`assets/packs/${name}-index.png`, false),
@@ -652,16 +671,22 @@ async function loadPack(name) {
 async function usePack(name) {
   if (!name || activePack === name) return;
   activePack = name;
+  const u = terrainMat.uniforms;
   for (const [k, p] of Object.entries(packs)) {          // keep GPU memory low: drop other packs
     if (k === name) continue;
-    p.then(d => { d.atlas.dispose(); d.idx.dispose(); d.relief.dispose(); d.mid.dispose(); d.mesh.geometry.dispose(); scene.remove(d.mesh); if (d.trees) { d.trees.dispose(); scene.remove(d.trees); } }).catch(() => {});
+    p.then(d => {
+      // the terrain keeps drawing with its imagery until the next pack is in: freed now, it would be uploaded again and never freed
+      const tex = [d.atlas, d.idx, d.relief, d.mid];
+      if (u.det.value === d.atlas) retiredTex.push(...tex); else tex.forEach(t => t.dispose());
+      d.mesh.geometry.dispose(); scene.remove(d.mesh); if (d.trees) { d.trees.dispose(); scene.remove(d.trees); }
+    }).catch(() => {});
     delete packs[k];
   }
   packs[name] = packs[name] || loadPack(name);
   let d; try { d = await packs[name]; } catch (e) { console.warn('detail pack failed', name, e); return; }
   if (activePack !== name) return;
-  const u = terrainMat.uniforms;
   u.det.value = d.atlas; u.detIdx.value = d.idx; u.detRel.value = d.relief; u.detMid.value = d.mid; u.uMidAtlas.value.set(64, d.midRows); u.uDetAtlas.value.set(32, d.rows); u.uDetOn.value = 0;
+  retiredTex.splice(0).forEach(t => t.dispose());
   if (!d.mesh.parent) scene.add(d.mesh);
   if (d.trees && !d.trees.parent) scene.add(d.trees);
   state.trees = d.trees;
@@ -1133,12 +1158,15 @@ const veilWeight = () => explore.on ? 0 : explore.blend ? ease(explore.blend.t) 
 // Works in CSS pixels on a scratch copy of the real camera (fov, aspect and the view offset that centres the open area).
 const fitCamera = new THREE.PerspectiveCamera(), _fp = new V3(), _fq = new V3(), _fa = new V3(), _fb = new V3(), _fz = new V3();
 const _frc = new THREE.Raycaster(), _fn = new THREE.Vector2(), _fs = new THREE.Sphere(), _fpl = new THREE.Plane(), _fqq = new THREE.Quaternion();
+const lowScreen = matchMedia('(min-width: 641px) and (max-height: 460px)');   // matches the CSS for phones held sideways
 function openArea(storyRoom) {    // below the header, above the card, in from the sides (CSS px); storyRoom 0..1 (or a boolean)
   const w = innerWidth, ph = phone(), cardTop = document.getElementById('dock').firstElementChild.getBoundingClientRect().top, sr = +storyRoom || 0;
-  // with a story due, its card: full width at the top on phones, a column at the right on desktop. Labels on a phone
-  // also stay below the column of layer chips (ly0), which keeps every constraint a plain box, so shots change smoothly.
-  const y0 = ph ? lerp(90, 314, sr) : 76;
-  return { x0: ph ? 26 : 56, x1: w - (ph ? 26 : lerp(56, 400, sr)), y0, ly0: ph ? Math.max(y0, 160) : y0, y1: cardTop - 28 };
+  // with a story due, its card: full width at the top on phones, a column at the right on desktop, beside the card along
+  // the bottom on a phone held sideways (low). Labels on a phone also stay below the column of layer chips (ly0), which
+  // keeps every constraint a plain box, so shots change smoothly.
+  const y0 = ph ? lerp(90, 314, sr) : 76, low = lowScreen.matches;
+  const top = low ? Math.min(cardTop, lerp(cardTop, innerHeight - 14 - poiEl.offsetHeight, sr)) : cardTop;
+  return { x0: ph ? 26 : 56, x1: w - (ph ? 26 : low ? 56 : lerp(56, 400, sr)), y0, ly0: ph ? Math.max(y0, 160) : y0, y1: top - 28 };
 }
 const item = (v, l = 0, r = 0, u = 0, d = 0, lab = false) => ({ v, l, r, u, d, lab });   // a world point and the px it needs around it
 // The rig at this tilt and heading that shows every item: the target slides until the items sit centred in the open
@@ -1360,13 +1388,13 @@ const POI = {
   dachl: { lat: 47.2686, lon: 11.3933, t: 'Goldenes Dachl', x: '2,657 fire-gilded copper tiles, finished around 1500 for Emperor Maximilian I to watch festivities in the square below.' },
   dom: { lat: 47.2692, lon: 11.3938, t: 'Dom St. Jakob', x: 'Midnight Mass at 11:30 pm; arrive by 11 for seats. Lucas Cranach’s Mariahilf painting hangs above the high altar.' },
   hofkirche: { lat: 47.2683, lon: 11.3956, t: 'Hofkirche', x: 'Emperor Maximilian I’s empty tomb, guarded by 28 larger-than-life bronze figures, the “Schwarze Mander”.' },
-  bergisel: { d: 1.8, lat: 47.2490, lon: 11.3995, t: 'Bergisel ski jump', x: 'Zaha Hadid’s 2002 tower above the 1964 and 1976 Olympic jumping hill. The Four Hills Tournament jumps here each January.' },
-  kaiserburg: { d: 1.3, lat: 49.4578, lon: 11.0758, t: 'Imperial Castle', x: 'Every Holy Roman Emperor from 1050 to 1571 stayed in this castle on the sandstone ridge above the old town.' },
+  bergisel: { d: 1.8, h: 190, lat: 47.2490, lon: 11.3995, t: 'Bergisel ski jump', x: 'Zaha Hadid’s 2002 tower above the 1964 and 1976 Olympic jumping hill. The Four Hills Tournament jumps here each January.' },
+  kaiserburg: { d: .85, h: 330, lat: 49.4578, lon: 11.0758, t: 'Imperial Castle', x: 'Every Holy Roman Emperor from 1050 to 1571 stayed in this castle on the sandstone ridge above the old town.' },
   hauptmarkt: { lat: 49.4540, lon: 11.0775, t: 'Hauptmarkt & Frauenkirche', x: 'Home of the Christkindlesmarkt. At noon the Frauenkirche clock’s electors circle the emperor. The market usually closes Dec 24, so check 2026 dates.' },
   lorenz: { lat: 49.4509, lon: 11.0786, t: 'St. Lorenz', x: 'Twin Gothic spires, about 80 m. Inside hangs Veit Stoss’s carved Angelic Salutation of 1517–18.' },
-  hohensch: { d: 1.2, lat: 47.5553, lon: 10.7364, t: 'Hohenschwangau', x: 'Ludwig II grew up in this yellow castle, rebuilt by his father Maximilian II in the 1830s.' },
-  neusch: { d: 1.6, lat: 47.5576, lon: 10.7498, t: 'Neuschwanstein', x: 'Begun in 1869 and never finished; Ludwig lived here only 172 days. It inspired Disney’s Sleeping Beauty Castle.' },
-  marienbr: { d: 1.2, lat: 47.5550, lon: 10.7494, t: 'Marienbrücke', x: 'The classic castle view is from this bridge over the Pöllat gorge, but it is often closed in winter for ice and snow.' },
+  hohensch: { d: .75, h: 150, lat: 47.5553, lon: 10.7364, t: 'Hohenschwangau', x: 'Ludwig II grew up in this yellow castle, rebuilt by his father Maximilian II in the 1830s.' },
+  neusch: { d: .85, h: 140, lat: 47.5576, lon: 10.7498, t: 'Neuschwanstein', x: 'Begun in 1869 and never finished; Ludwig lived here only 172 days. It inspired Disney’s Sleeping Beauty Castle.' },
+  marienbr: { d: .95, h: 165, lat: 47.5550, lon: 10.7494, t: 'Marienbrücke', x: 'The classic castle view is from this bridge over the Pöllat gorge, but it is often closed in winter for ice and snow.' },
 };
 const poiEl = document.getElementById('poi');
 let pins = [];
@@ -1766,8 +1794,9 @@ function buildJourney(geo, family = []) {
     await flyTo({ ...home, dist: Math.min(home.dist, tcam.dist) }, 2);
   }
 }
-// A tour stop from 0.55 km (or p.d): the sight's foot sits low in the open area, beside the story card on desktop and
-// under it on phones, as a pure screen shift, so the slow turn while the story is read keeps it in place.
+// A stop's view (a tour stop from 0.55 km unless p.d says otherwise): the sight's foot sits low in the open area, beside
+// the story card on desktop and under it on phones, as a pure screen shift, so the slow turn while the story is read
+// keeps it in place.
 function stopView(p, heading, d = p.d || .55, tilt = 66) {
   const v = view(p.lat, p.lon, d, tilt, heading), A = openArea(state.stories);
   v.sx = (A.x0 + A.x1 - innerWidth) / 2;
@@ -1781,7 +1810,7 @@ async function tour(stops, base, rate = 1, partOfLeg = false) {
   if (!await enterCity(base)) return false;
   for (let i = 0; i < stops.length; i++) {
     const p = stops[i];
-    if (!await flyTo(stopView(p, (tcam.heading + 35) % 360), 2)) return false;
+    if (!await flyTo(stopView(p, p.h ?? (tcam.heading + 35) % 360), 2)) return false;   // h: from the open side (castles)
     state.progress = (i + 1) / stops.length * (partOfLeg ? .15 : 1) + (partOfLeg ? .45 : 0);
     if (!await storyHold(p, `Stop ${i + 1} of ${stops.length}`, dt => { tcam.heading += (reduceMotion ? 0 : 3.6) * dt; })) return false;
   }

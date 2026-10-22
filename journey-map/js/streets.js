@@ -172,14 +172,14 @@ export default function create(ctx) {
         if(urban>.5 && loose<.5 && kind<12.5){
           float j=max(pulse(u,fu,0.,.025,.4),pulse(v,fv,0.,.025,.4));
           col=mix(vec3(.18,.18,.175),vec3(.21,.2,.185),sett)*(1.-.35*j)*(.9+.2*fn(q,2.,mpp));
-          float sn=W*clamp(.2+.45*fn(q*1.5,1.6,mpp)+smoothstep(.45*e,e,av),0.,.92);
+          float sn=mix(Wo,W,.5)*clamp(.2+.45*fn(q*1.5,1.6,mpp)+smoothstep(.45*e,e,av),0.,.92);   // cleared, less so up high
           col=mix(col, SNOW*.94, sn); wet=W*(1.-sn)*.4;
         } else {
           // a worn line through the snow, not a white one: packed, greyer and a little wet down the middle
           float tread=1.-smoothstep(.1*e,.9*e,av+(fn(q*2.,1.3,mpp)-.5)*.5*e);
           if(kind>12.5 && kind<13.5) tread=1.-smoothstep(.15,.45,abs(av-.8)+(fn(q,2.,mpp)-.5)*.3);   // a track's two ruts
           col=mix(SNOW*.82, vec3(.36,.355,.35)*(.85+.3*fn(q*3.,.6,mpp)), tread*.7);
-          col=mix(vec3(.15,.125,.095)*(.85+.3*fn(q,1.,mpp)), col, urban>.5?W:Wo);
+          col=mix(vec3(.15,.125,.095)*(.85+.3*fn(q,1.,mpp)), col, Wo);                 // as much snow as the ground beside it
           al*=mix(.35,.75,tread); wet=W*tread*.25;
         }
         if(kind>13.5){                                                                // steps: risers every 30 cm

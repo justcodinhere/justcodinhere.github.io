@@ -66,23 +66,21 @@ the file directly from disk won't load the map data).
 - Close to the camera each forest point grows into a small stand of trees;
   further out the trees get simpler, so the forests stay light on phones.
 - Hand-built landmarks at their true size on their real footprints, in place of
-  the plain blocks there: every stop of the Munich and Innsbruck walks (see
-  below); Kaiserburg, St. Lorenz and the Frauenkirche in Nuremberg;
-  Neuschwanstein, Hohenschwangau, the Wieskirche and Kufstein fortress. Brick,
-  sandstone, plaster, copper, slate and tile surfaces with tracery windows and
-  clocks, lit and shadowed like the other buildings; the castles stand on their
-  rocks again (`tools/lm_footprints.py` picks the outlines).
-- The Munich Frauenkirche in detail: the 109 m brick hall under its huge roof,
-  tall lancet windows between flat strips, the polygonal choir, and the two
-  99 m towers with clocks, octagonal belfries and green copper domes.
-- Munich's old-town walk: the Neues Rathaus front on Marienplatz with its
-  pointed gables, pinnacles, statues and dormers, the corner oriel and the
-  85 m tower with the Glockenspiel bay and its figures; the white Altes Rathaus
-  with its pinnacled gable and the gate tower's four corner turrets; Alter
-  Peter's broad tower with its clocks, gallery and stacked copper lantern helm;
-  Heilig-Geist, the Mariensäule with its gilded Virgin, St. Michael's show front
-  of statue niches and scrolled gables, and the narrow Bürgersaal and
-  Asamkirche fronts between the houses.
+  the plain blocks there, for every stop of the city walks and day trips and
+  the big sights along the way (`js/landmarks.js`, the models in `js/lm/`;
+  `tools/lm_footprints.py` picks the outlines). Brick, sandstone, plaster,
+  copper, slate and tile surfaces with tracery windows and clocks, lit and
+  shadowed like the other buildings; the castles stand on their rocks again.
+- Munich's old-town walk: the Frauenkirche's 109 m brick hall under its huge
+  roof, with tall lancet windows, the polygonal choir and the two 99 m towers
+  with clocks, octagonal belfries and green copper domes; the Neues Rathaus
+  front on Marienplatz with its pointed gables, pinnacles, statues and
+  dormers, the corner oriel and the 85 m tower with the Glockenspiel bay and
+  its figures; the white Altes Rathaus with its pinnacled gable and the gate
+  tower's four corner turrets; Alter Peter's broad tower with its clocks,
+  gallery and stacked copper lantern helm; Heilig-Geist, the Mariensäule with
+  its gilded Virgin, St. Michael's show front of statue niches and scrolled
+  gables, and the narrow Bürgersaal and Asamkirche fronts between the houses.
 - Innsbruck's walk: the Goldenes Dachl with its open loggias and gilded roof
   on the Neuhof, the Rococo Helblinghaus, the Stadtturm with its gallery and
   onion, the Ottoburg's oriels and red-and-white shutters, Dom St. Jakob, the
@@ -103,7 +101,9 @@ the file directly from disk won't load the map data).
   with the great round Kaiserturm high on its rock, and the white oval
   Wieskirche alone in the meadows.
 - Phone layout: the camera frames the action in the space between the header
-  and the card, and wide shots pull back further on narrow screens.
+  and the card, and wide shots pull back further on narrow screens. At each
+  tour stop the sight sits beside the story card (below it on phones), and on
+  a phone held sideways the two cards sit side by side along the bottom.
 
 ## Photo-real cities (Google Photorealistic 3D Tiles)
 
@@ -187,10 +187,10 @@ snapping). They expect a `data/` working folder and `rasterio`, `mgrs`,
 
 ## Next steps if we keep going
 
-- Swap the code-built vehicles for Blender models: export `.glb` files and load
-  them with three.js `GLTFLoader` into the groups `js/vehicles.js` fills.
 - Free government data (needs these hosts allowed in the session's network
   settings): Bavaria's LoD2 buildings with surveyed roofs, 40 cm aerial photos
   (DOP40) and 1 m terrain; basemap.at aerial photos and Tyrol terrain for
   Innsbruck.
 - Day-of-trip details on tap (hotel, Mass times, reservations).
+- A timing pass on a real phone: the trees, landmarks and streets have only been
+  timed in a software renderer.

@@ -144,7 +144,9 @@ export default function create(ctx) {
       }
       float cv=max(dot(n,V),0.), F=.02+.98*pow(1.-cv,4.5);
       float town=1.-step(.5,abs(iceW-1.));                                           // a reach through town: deep right up to the quay
-      vec3 body=vCol*lit*.74*mix(mix(1.1,1.,town),.95,smoothstep(0.,25.,shore))*(.94+.12*M.b);
+      float bl=dot(vCol,vec3(.25,.6,.15));                                            // pale summer shallows (the Isar's gravel and
+      vec3 bc=vCol*min(1.,(.11+.3*max(bl-.11,0.))/max(bl,1e-3));                       // glacial milk) eased down so they don't read milky
+      vec3 body=bc*lit*.74*mix(mix(1.1,1.,town),.95,smoothstep(0.,25.,shore))*(.94+.12*M.b);
       body=mix(vec3(dot(body,vec3(.25,.6,.15))),body,.8);                            // a grey winter sky mutes the summer turquoise
       vec3 col=mix(body, env, F*(.9+.2*(1.-patchy)));
       float sp=max(dot(r,L),0.), ex=mix(1400.,90.,clamp(sub*3.5,0.,1.));
