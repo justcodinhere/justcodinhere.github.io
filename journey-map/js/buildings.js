@@ -1,10 +1,12 @@
-// 3D buildings from Overture / OpenStreetMap footprints: walls with procedural facades in each region's style, real roof
-// shapes with eaves, tiles and snow, chimneys and dormers, towers and spires.
+// 3D buildings from Overture / OpenStreetMap footprints: walls with procedural facades in each region's style (Inn-Salzach
+// parapets and oriels, Franconian half-timbering, Alpine farmhouses with wooden balconies), real roof shapes with eaves,
+// tiles, hip lines and snow, chimneys (some smoking) and dormers, towers and spires.
 // Buildings cast sun shadows on each other and on the ground near the camera (WebGL2).
-// create(ctx) returns { buildBuildings(buffer, meta) -> Promise<THREE.Mesh>, update(dt), onCity(on) }.
+// create(ctx) returns { buildBuildings(buffer, meta) -> Promise<THREE.Mesh>, update(dt), onCity(on) }; the mesh returned is an
+// empty holder whose children are the ~2.5 km chunks (and their smoke), culled by distance in update().
 export default function create(ctx) {
   const { THREE, V3, uni, HAZE, LIGHT, NOISE, D2R, BHS, llv, meshKm, phone, renderer, scene, cam, clamp } = ctx;
-  const SHADOWS = renderer.capabilities.isWebGL2, SM = phone() ? 1024 : 2048, SHADOW_LAYER = 7;
+  const SHADOWS = renderer.capabilities.isWebGL2, SM = phone() ? 1024 : 2048, SHADOW_LAYER = 7, FAR = phone() ? 32 : 45, MINOR = phone() ? 5 : 9;   // km: buildings fade out by FAR, small details go at MINOR
   const SHADOW_GLSL = SHADOWS ? `precision highp sampler2DShadow;
     uniform sampler2DShadow uShadow; uniform float uShadowOn, uShadowTexel; varying vec3 vS;
     // sun visibility from the buildings' depth map: 4 hardware-filtered taps, slope-scaled bias, fading out at the map's edge
@@ -46,13 +48,14 @@ export default function create(ctx) {
       float u=vP.x, h=vP.y, fu=max(fwidth(u), .003), fh=max(fwidth(h), .003);
       float A=floor(vF.z+.5), B=floor(vF.w+.5), kind=bn(A, 0., 3.), style=bn(A, 3., 4.), seed=bn(B, 0., 8.);
       float Lf=vF.x, E=vF.y, ov=vX.x, ex=floor(vX.y+.5), acc=floor(vC.a+.5);
-      vec3 base=vC.rgb, col=base, add=vec3(0.); float vis=1., ao=1.;
+      vec3 base=vC.rgb, col=base, add=vec3(0.), nl=n; float vis=1., ao=1., rvis=1.;     // nl: the normal that lights this pixel
       float sR=fract(seed*.6180339);
       if(kind<.5 || kind>6.5){
         // ---------------- walls ----------------
         float F=bn(A, 7., 5.), party=bt(A, 12.), shop=bt(A, 13.), arc=bt(A, 14.), door=bt(A, 15.);
         float shut=bt(B, 8.), quoin=bt(B, 9.), timber=bt(B, 10.), balc=bt(B, 11.), church=bt(B, 12.), util=bt(B, 13.), modern=bt(B, 14.);
-        float gableF=bt(ex, 0.), pitched=bt(ex, 1.), tower=step(6.5, kind);
+        float gableF=bt(ex, 0.), pitched=bt(ex, 1.), parap=bt(ex, 2.), ph=1.+ov*3., tower=step(6.5, kind);   // parapet walls keep its height in ov
+        vec3 T=normalize(cross(up, n)); T*=sign(dot(dFdx(vL), T)*dFdx(u)+dot(dFdy(vL), T)*dFdy(u)+1e-12);   // along the wall, the way u runs
         base=max(mix(vec3(dot(base, vec3(.2126, .7152, .0722))), base, 1.18), 0.)*.8; col=base;
         if(F<.5) F=max(1., floor((E-.4)/3.15+.5));
         float g=style>.5&&style<4.5&&F>2.5?min(4., E*.36):style>4.5&&style<5.5?2.8:3.2;
@@ -62,6 +65,8 @@ export default function create(ctx) {
         float det=1.-smoothstep(1.1, 2.4, far);
         float trim=style<.5||style>5.5?.9:1.;
         vec3 trimC=mix(base, vec3(.86, .85, .82), style>.5&&style<3.5?.75:.45);
+        // white village houses: windows framed in painted bands (grey, ochre or a soft green), as on Tyrolean and Bavarian farms
+        if(style>4.5&&style<6.5) trimC=bn(acc, 0., 2.)<1.5?vec3(.42, .40, .36):bn(acc, 0., 2.)<2.5?vec3(.56, .44, .26):vec3(.36, .44, .36);
         vec3 glassC=mix(vec3(.018, .02, .026), vec3(.30, .36, .44), .08+.7*pow(1.-max(dot(n, V), 0.), 3.));
         float winF=0.;
         // stone or plaster plinth
@@ -71,9 +76,9 @@ export default function create(ctx) {
           float jr=pulse(h, fh, 0., .05, .52, -30., 600.), j=jr+pulse(u+.55*mod(floor(h/.52), 2.), fu, 0., .05, 1.1, -600., 600.)*(1.-jr);
           col=ss*(1.-.35*j*det); quoin=0.;
         }
-        if(timber>.5&&style>4.5&&style<5.5&&h>g){ // Alpine farmhouse: dark larch log walls above the white ground floor
+        if(timber>.5&&style>4.5&&style<5.5&&h>g+max(F-2., 0.)*fl-.12){ // Alpine farmhouse: the top storey in dark larch logs, a boarded gable
           vec3 wood=timberCol(bn(acc, 2., 2.))*1.6+vec3(.05, .03, .015);
-          col=wood*(1.-.35*det*pulse(h, fh, 0., .035, .21, g, 600.));
+          col=wood*(1.-.35*det*(h<E?pulse(h, fh, 0., .035, .21, -600., 600.):pulse(u, fu, 0., .03, .19, -600., 600.)));
           trimC=vec3(.80, .78, .74);
         }
         if(util>.5){
@@ -112,7 +117,7 @@ export default function create(ctx) {
           float m=quoin>.5?1.1:.75, nb=max(floor((Lf-2.*m)/bay+.35), Lf>2.3?1.:0.);
           if(nb<1.5&&Lf<3.8) m=(Lf-min(Lf*.4, 1.2))*.5-.3;
           float P=(Lf-2.*m)/max(nb, 1.), ww=min(modern>.5?P*.62:style>4.5&&style<5.5?1.0:1.18, P*.45);
-          float wh=clamp(fl*.43, .85, 1.5), sill=(fl-wh)*.4;
+          float wh=clamp(fl*.5, .9, 1.75), sill=(fl-wh)*.4;
           float a0=(P-ww)*.5, lo=m, hi=Lf-m, g0=shop+arc>.5?0.:1.;
           if(min(fu, fh)>3.6){
             // far away every pattern has averaged out: just the mean of plaster, frames and glass
@@ -125,14 +130,41 @@ export default function create(ctx) {
           float yg0=g0*box(h, fh, 1.05, 1.05+min(wh, g-1.5)), yf0=g0*box(h, fh, .85, 1.2+min(wh, g-1.5));
           if(F<1.5){ yg=0.; yf=0.; yg0=g0*box(h, fh, max(.9, E*.3), max(.9, E*.3)+min(wh, E*.45)); yf0=yg0; }
           float gw=gableF*box(u, fu, Lf*.5-.55, Lf*.5+.55)*box(h, fh, E+.9, E+.9+wh*.8);   // a window up in the gable
-          float win=cg*(yg+yg0)+gw, frame=max(cf*(yf+yf0)-cg*(yg+yg0), 0.);
-          float sh=shut*cs*(yg+yg0);
+          float np=1.-party, wg=cg*(yg+yg0)*np, win=wg+gw*np, frame=max(cf*(yf+yf0)-cg*(yg+yg0), 0.)*np;
+          float sh=shut*cs*(yg+yg0)*np;
           if(modern>.5){ frame*=.3; sh=0.; }
-          if(party>.5){ win=0.; frame=0.; sh=0.; }
           // per-window variation: some lit warm from inside (it is Christmas), some with curtains
           float wi=floor((u-lo)/P), fi=floor((h-g)/fl), rw=hh(vec2(wi+seed*3.1, fi+seed*.37));
           float warm=step(.84, rw)*(1.-modern*.6);
           vec3 gc=glassC*(.7+.6*fract(rw*7.3))+vec3(.03, .028, .024)*step(.62, fract(rw*3.7));
+          // inside the opening: lu across it, lv up from its sill, whh its height
+          float up1=step(g, h)*step(1.5, F);
+          float y0=up1>.5?g+sill+floor((h-g-sill)/fl)*fl:F<1.5?max(.9, E*.3):1.05;
+          float whh=up1>.5?wh:F<1.5?min(wh, E*.45):min(wh, g-1.5), lu=mod(u-lo-a0, P), lv=h-y0;
+          if(det>.01&&wg>.01){
+            // the glass sits back in the wall: from an angle one jamb and the sill (or the lintel) show beside it, and the sun
+            // throws a jamb's and the lintel's shadow in; close up, the casement bars and a lace cafe curtain behind the glass
+            float vn=max(dot(V, n), .12), ln=max(dot(L, n), .03), dep=modern>.5?.07:style>.5&&style<5.5?.22:.16;
+            float vt=clamp(dot(V, T)/vn*dep, -.45*ww, .45*ww), vh=clamp(dot(V, up)/vn*dep, -.45*whh, .45*whh);
+            float jb=vt>0.?box(lu, fu, 0., vt):box(lu, fu, ww+vt, ww), sb=vh>0.?box(lv, fh, 0., vh):box(lv, fh, whh+vh, whh);
+            float lt=dot(L, T)/ln*dep, lh=max(dot(L, up), 0.)/ln*dep;
+            float shd=clamp((lt>0.?box(lu, fu, ww-lt, ww):box(lu, fu, 0., -lt))+box(lv, fh, whh-lh, whh), 0., 1.)*step(.03, dot(L, n));
+            float dc=1.-smoothstep(.03, .07, far), cur=step(.45, fract(rw*5.1))*(1.-modern);
+            gc=mix(gc, vec3(.40, .39, .36)+vec3(.2, .12, .05)*warm, cur*box(lv, fh, 0., whh*.48)*.7*dc);
+            float bars=dc*clamp(box(lu, fu, ww*.5-.03, ww*.5+.03)*step(.8, ww)+box(lv, fh, whh*.66-.03, whh*.66+.03), 0., 1.)*(1.-modern*.6);
+            gc=mix(gc, trimC*.9, bars);
+            float rv=clamp(jb+sb, 0., 1.)*det;
+            gc=mix(gc, trimC*.92, rv);
+            nl=normalize(mix(n, jb>sb?sign(vt)*T:sign(vh)*up, rv*wg));
+            rvis=1.-shd*wg*det*.85;
+          }
+          // grander houses: a little cornice over each upper window
+          if((quoin>.5||style>2.5&&style<3.5)&&up1>.5&&h<top&&party<.5&&modern<.5){
+            float hx=pulse(u, fu, a0-.28, ww+.56, P, lo, hi), hz=box(lv, fh, whh+.2, whh+.36);
+            col=mix(col, trimC, hx*hz*det); col*=1.-.3*hx*box(lv, fh, whh+.14, whh+.2)*det;
+          }
+          // rusticated ground floors in the old towns
+          if(style>.5&&style<3.5&&h<g&&quoin+shop>.5&&timber<.5) col*=1.-.2*det*pulse(h, fh, 0., .045, .42, .5, g-.15);
           if(timber>.5&&(style>3.5&&style<4.5||style>5.5)&&h>g){
             // Franconian half-timbering: posts at the bay lines, rails at each floor, braces beside the windows
             vec3 tc=timberCol(bn(acc, 2., 2.));
@@ -154,29 +186,33 @@ export default function create(ctx) {
             float qw=mod(floor(h/.55), 2.)>.5?.5:.8;
             col=mix(col, trimC*.97, (box(u, fu, 0., qw)+box(u, fu, Lf-qw, Lf))*step(.45, h)*step(h, top)*det);
           }
-          // Alpine balcony on the sunny side: a wooden railing with a shadow under its floor
-          vec3 Ls=normalize(L-up*dot(L, up));
-          if(balc>.5&&party<.5&&Lf>5.&&dot(n, Ls)>-.25&&F>1.5){
-            float by=box(h, fh, g+.05, g+1.12)*box(u, fu, .3, Lf-.3);
-            float sl=pulse(u, fu, 0., .075, .17, -600., 600.);
-            vec3 bw=timberCol(bn(acc, 2., 2.))*1.5+.02;
-            col*=1.-.45*box(h, fh, g-.55, g)*box(u, fu, .3, Lf-.3);
-            col=mix(col, mix(bw, bw*.35, sl*det), by);
-            win*=1.-by*.85; sh*=1.-by; frame*=1.-by;
+          // the parapet: plain plaster, a moulded band at the eaves line and a coping along the top
+          if(parap>.5&&h>E-.1){
+            col=mix(base, trimC, clamp(box(h, fh, E-.1, E+.16)+box(h, fh, E+ph-.2, E+ph+1.), 0., 1.));
+            col*=1.-.3*det*box(h, fh, E+.16, E+.24)-.25*det*box(h, fh, E+ph-.28, E+ph-.2);
           }
           col=mix(col, trimC, frame*trim);
           col=mix(col, shutterCol(bn(acc, 0., 2.))*(1.-.3*pulse(h, fh, 0., .05, .14, -600., 600.)*det), sh);
           col=mix(col, gc, win); add+=vec3(.55, .32, .12)*.32*warm*win; winF=win;
-          col*=1.-.4*box(h, fh, sill-.32, sill-.22)*cf*det*(1.-party);       // shadow under each sill
+          col*=1.-.4*box(lv, fh, fl-.32, fl-.22)*cf*up1*step(h, top)*det*np;            // shadow under each sill
           // ground floor: shopfronts (warm light inside), Lauben arches, a front door
           if(shop>.5&&h<g){
             float sw=P*.72, sa=(P-sw)*.5, sx=pulse(u, fu, sa, sw, P, lo, hi);
             float sy=box(h, fh, .42, g-.85), di=step(.72, hh(vec2(wi, seed)));
             float sfx=pulse(u, fu, sa-.12, sw+.24, P, lo, hi), sfy=box(h, fh, .3, g-.73);
             col=mix(col, vec3(.05, .055, .05), max(sfx*sfy-sx*sy, 0.));
-            col=mix(col, mix(gc, vec3(.06, .045, .03), di), sx*sy);
-            add+=vec3(.85, .55, .25)*.26*sx*sy*(1.-di*.7);
-            col=mix(col, trimC*.8, box(h, fh, g-.55, g-.3)*box(u, fu, lo, hi)*.6);
+            // the window: glass in a few panes, lit warm from inside, brightest down where the displays are
+            float cu2=mod(u-lo-sa, P), sv=clamp((h-.42)/max(g-1.27, .5), 0., 1.), np2=max(floor(sw/1.1), 1.);
+            float mull=pulse(cu2, fu, 0., .07, sw/np2, .2, sw-.2)*det;
+            float spot=step(.55, hh(vec2(floor(u*2.6), floor(h*3.)+seed)))*box(h, fh, .55, 1.45)*(1.-smoothstep(.08, .2, far));   // goods on display, close up
+            col=mix(col, mix(gc*.65, vec3(.06, .045, .03), di), sx*sy);
+            col=mix(col, vec3(.05, .055, .05), mull*sx*sy);
+            add+=(vec3(1., .62, .3)*(.04+.17*(1.-sv))+vec3(1., .78, .45)*.1*spot)*sx*sy*(1.-di)*(1.-mull);
+            // a painted sign board over each shopfront, with gilt lettering
+            float cu=mod(u-lo, P), sr=hh(vec2(wi, seed+5.)), sgn=box(h, fh, g-.8, g-.4)*pulse(u, fu, sa-.05, sw+.1, P, lo, hi);
+            vec3 sc=sr<.4?vec3(.035, .07, .045):sr<.7?vec3(.13, .03, .025):sr<.85?vec3(.03, .035, .06):vec3(.02);
+            float let=pulse(cu, fu, 0., .09, .16, sa+.3, sa+sw-.3)*box(h, fh, g-.68, g-.52)*step(.25, fract(sr*7.));
+            col=mix(col, mix(sc, vec3(.62, .45, .16), let*.8), sgn);
           }
           if(arc>.5&&h<g){
             float aw=P*.7, cu=(fract((u-lo)/P)-.5)*P, ys=g-.75-aw*.5;
@@ -202,27 +238,38 @@ export default function create(ctx) {
         col*=1.+.04*(sR-.5)*gk;
       } else if(kind<1.5 || kind>4.5&&kind<5.5){
         // ---------------- roofs ----------------
-        float a=u, r=h, re=Lf, ve=E, snowK=acc/255.;
-        float fa=fu, fr=fh, ny=dot(n, up);
-        float det=1.-smoothstep(.15, .5, max(fa, fr));
+        float a=u, r=h, re=Lf, ve=E, snowK=acc/255., hip=bt(ex, 0.);
+        float fa=fu, fr=fh, ny=dot(n, up), fe=max(fa, fr);
+        float det=1.-smoothstep(.15, .5, fe);
+        // hips: E is the ridge's half length on this face (0 on the end triangles); the hip line runs out at 45 degrees in plan,
+        // so its distance follows from r and the face's true pitch (the drawn one is exaggerated by BHS)
+        float sd=sqrt(max(1./max(ny*ny, .01)-1., 0.))/${BHS.toFixed(2)}, ik=inversesqrt(1.+sd*sd);
+        float dh=hip>.5?(ve+r*ik-abs(a))*.72:1e3, cap=0.;
         float row=pulse(r, fr, 0., .07, .34, -600., 600.);
         if(kind<1.5){
           float jt=pulse(a+.13*mod(floor(r/.34), 2.), fa, 0., .035, .26, -600., 600.);
           float tv=hh(vec2(floor(a/.26+.5*mod(floor(r/.34), 2.)), floor(r/.34)+seed));
-          col=base*mix(.86, (1.-.42*row-.18*jt*(1.-row))*(.9+.2*tv), det);
+          col=base*mix(.87, (1.-.28*row-.14*jt*(1.-row))*(.9+.2*tv), det);
+          // ridge and hip tiles stand proud: a darker line, catching less snow
+          cap=max(1.-smoothstep(.1, .12+fe, r), 1.-smoothstep(.1, .12+fe, dh));
+          col=mix(col, base*.55, cap*.9);
         } else col=mix(vec3(.24, .23, .22), base, .3)*(.94+.1*vnoise(vec3(a*.2, r*.2, seed)));   // flat roofs: gravel
         if(ny<0.){ col=vec3(.16, .12, .09); snowK=0.; }              // the underside of the eaves
-        // snow: deep on gentle slopes, sliding off steep ones, broken up at the edges, with a bright lip along the eaves
+        // snow: deep on gentle slopes, sliding off steep ones and thinner on slopes facing the sun, broken up at the edges,
+        // with a bright lip along the eaves
         float slope=kind>4.5?1.:smoothstep(.36, .6, ny);
-        float cover=uWinter*snowK*slope;
+        vec3 Lh=L-up*dot(L, up); float sunF=kind<1.5?max(dot(n-up*ny, normalize(Lh+1e-6)), 0.):0.;
+        float cover=uWinter*snowK*slope*(1.-.28*sunF);
         float sm; vec3 snow=vec3(.86, .89, .94)*(.96+.08*vnoise(vec3(a*.5, r*.5, seed)))*(1.-.07*row*det*step(kind, 1.5));
         if(kind<1.5){
           // a sheet of snow from the ridge down to a ragged lower edge (where it has slid or melted), the odd hole when thin,
           // and snow lingering in the tile rows below it
-          float rag=(vnoise(vec3(a*.55, seed, 1.))-.5)*1.3+(vnoise(vec3(a*2.1, seed, 4.))-.5)*.45;
+          float rag=(vnoise(vec3(a*.3, seed, 1.))-.5)*1.5+(vnoise(vec3(a*1.1, seed, 4.))-.5)*.5+(vnoise(vec3(a*4., seed, 2.))-.5)*.14;
           float rm=re*(cover*1.15-.12)+rag, fe0=max(fr, .02);
           sm=(1.-smoothstep(rm-.5*fe0-.04, rm+.5*fe0+.04, r))*smoothstep(.15, .35, vnoise(vec3(a*.35, r*.35, seed*3.))+cover*.9)*step(.04, cover);
-          col=mix(col, vec3(.84, .87, .92), uWinter*.45*(1.-sm)*mix(.2, row*1.6, det)*step(.2, snowK));
+          sm*=1.-.45*cap;
+          snow*=.95+.08*vnoise(vec3(a*.9, r*2.2, seed+7.));                                  // wind-rippled
+          col=mix(col, vec3(.84, .87, .92), uWinter*.3*(1.-sm)*mix(.2, row*1.6, det)*step(.2, snowK));
         } else {
           float dr=vnoise(vec3(a*.12, r*.12, seed));                              // flat roofs hold their snow: drifts, no bare patches
           sm=uWinter*step(.04, snowK)*smoothstep(.1, .3, snowK+dr*.4); snow*=.95+.07*dr;
@@ -231,7 +278,7 @@ export default function create(ctx) {
         }
         if(kind<1.5){
           // the roof's edge: a dark fascia line, a strip of bare tiles along the eaves where the snow has slid, a bright snow lip above it
-          float de=min(re-r, ve-abs(a)), fe=max(fr, fa);
+          float de=min(re-r, hip>.5?1e3:ve-abs(a));
           float strip=(.18+.55*fract(sR*5.3))*uWinter*step(.5, snowK*4.);
           float lipK=box(de, fe, strip, strip+.3)*sm;
           sm*=smoothstep(strip-.5*fe, strip+.5*fe+.05, de);
@@ -261,12 +308,22 @@ export default function create(ctx) {
         add+=vec3(.05, .06, .05)*pow(max(dot(reflect(-V, n), L), 0.), 12.);
       } else {
         col=base;                                                      // dormer cheeks and other plain bits
+        if(B>32767.){
+          // a balcony railing: upright boards with dark joints and cut-outs, rails, a fascia at deck level, snow along the top
+          float far=max(fu, fh), dc=1.-smoothstep(.04, .2, far);
+          float rail=clamp(box(h, fh, E-.1, E)+box(h, fh, E-1.2, E-.88), 0., 1.);
+          float gap=pulse(u, fu, 0., .035, .15, -600., 600.)*(1.-rail);
+          float cut=pulse(u, fu, .1, .07, .3, -600., 600.)*box(h, fh, E-.58, E-.42);
+          col=base*(1.-.65*gap*dc-.75*cut*dc)*(1.+.25*rail);
+          col=mix(col, vec3(.86, .89, .94), uWinter*box(h, fh, E-.035, E+1.));
+          ao=.85;
+        }
       }
-      vec3 amb=winterLight(n, up, -n), sun=winterLight(n, up, L)-amb;
-      vis*=sunVis(dot(n, L));
+      vec3 amb=winterLight(nl, up, -nl), sun=winterLight(nl, up, L)-amb;
+      vis*=rvis*sunVis(dot(n, L));
       col=col*(amb*ao+sun*vis)+add;
       col=applyHaze(col, d, uAlt);
-      float alpha=uFade*(1.-smoothstep(28., 45., d));
+      float alpha=uFade*(1.-smoothstep(${(FAR * .62).toFixed(1)}, ${FAR}., d));
       if(alpha<.01) discard;
       gl_FragColor=vec4(col, alpha);
   #include <tonemapping_fragment>
@@ -275,6 +332,36 @@ export default function create(ctx) {
   const bldgMat = new THREE.ShaderMaterial({
     uniforms: { ...uni, uOrigin: { value: new V3() }, uFade: { value: 0 }, uShadowM: { value: new THREE.Matrix4() }, uShadow: { value: null }, uShadowOn: { value: 0 }, uShadowTexel: { value: 1 } },
     side: THREE.DoubleSide, transparent: true, vertexShader, fragmentShader,
+  });
+
+  // ---- chimney smoke (points; each puff's age, rise, drift and growth come from the clock) ----
+  const SMOKE_P = phone() ? .14 : .3, PUFFS = phone() ? 4 : 6, SMOKE_FAR = phone() ? 2.2 : 3.5;
+  const smokeMat = new THREE.ShaderMaterial({
+    uniforms: { ...uni, uFade: { value: 0 } },
+    transparent: true, depthWrite: false,
+    vertexShader: `attribute vec2 aS; uniform float uTime, uFocal; varying float vA; varying vec2 vS;
+      void main(){
+        vec3 up=normalize((modelMatrix*vec4(position, 1.)).xyz), east=normalize(vec3(up.z, 0., -up.x)), north=cross(up, east);
+        float life=8.+4.*aS.y, t=fract(${ctx.reduceMotion ? '.3' : 'uTime/life'}+aS.x), k=aS.y*6.283;
+        // rise slowing as it cools, a growing drift downwind and a little curl (km)
+        vec3 off=up*(.0008+.017*t-.006*t*t)+(east*.85+north*.3)*.013*t*t+(east*sin(k+t*4.)+north*cos(k*1.3+t*3.))*.0012*t;
+        vec4 mv=modelViewMatrix*vec4(position+off, 1.);
+        float dist=-mv.z;
+        gl_PointSize=min((.0016+.0075*t)*uFocal/max(dist, .01), 128.);
+        vA=smoothstep(0., .1, t)*(1.-smoothstep(.35, 1., t))*.7*(1.-smoothstep(${(SMOKE_FAR * .55).toFixed(2)}, ${SMOKE_FAR.toFixed(2)}, dist));
+        vS=vec2(aS.y*17.+floor(uTime/life+aS.x)*3.1, t);
+        gl_Position=projectionMatrix*mv; }`,
+    fragmentShader: NOISE + `uniform float uFade, uWinter; varying float vA; varying vec2 vS;
+      void main(){
+        vec2 p=gl_PointCoord*2.-1.; float r=dot(p, p);
+        float wisp=vnoise(vec3(p*1.8+vS.x, vS.y*3.))*.8+.2;
+        float a=vA*uFade*uWinter*smoothstep(1., .12, r)*(.5+.5*wisp);
+        if(a<.004) discard;
+        vec3 col=mix(vec3(.30, .32, .37), vec3(.64, .63, .61), .5-.4*p.y)*(.9+.2*vS.y);   // blue-grey wood smoke, its sunny top lighter   // the sunny top lit warm, the underside in sky shade
+        gl_FragColor=vec4(col, a);
+  #include <tonemapping_fragment>
+        gl_FragColor=linearToOutputTexel(gl_FragColor);
+      }`,
   });
 
   // ---- palettes (sRGB) by regional style ----
@@ -293,9 +380,12 @@ export default function create(ctx) {
   const ROOF = P(['#9a4630', '#83402c', '#a9573a', '#5b3a2c', '#4d5257', '#6d6f71', '#5f8e7a', '#2f3033']);
   const ROOF_BY = [[0, 1, 4, 5, 3, 0], [0, 1, 1, 3, 4, 0], [0, 1, 3, 4, 0], [0, 1, 2, 0, 1], [0, 1, 2, 0, 2], [3, 4, 7, 1, 3, 5], [0, 1, 2, 0, 4], [5, 4, 5, 7]];
   const SHUT_P = [.15, .5, .45, .08, .2, .85, .35, 0];
-  function pastel([r, g, b]) {           // a tagged facade colour as painted plaster: saturation <= .5, lightness .6-.86
+  function pastel([r, g, b]) {           // a tagged facade colour as lime-washed plaster: earthy pigments, nothing neon
     const c = new THREE.Color(r / 255, g / 255, b / 255), hsl = {}; c.getHSL(hsl);
-    c.setHSL(hsl.h, Math.min(hsl.s, .5) * (hsl.l > .9 ? .3 : 1), Math.min(.86, Math.max(.6, hsl.l * .9)));
+    let { h, s, l } = hsl;
+    if (h > .7 && h < .94) { h = h < .8 ? .6 : .985; s *= .55; }                        // violet / magenta -> grey-blue / old rose
+    const smax = h > .2 && h < .55 ? .3 : h >= .55 && h <= .7 ? .36 : .46;               // greens and cyans stay soft
+    c.setHSL(h, Math.min(s, smax) * (l > .9 ? .3 : 1), Math.min(.84, Math.max(.62, l * .9)));
     return [c.r * 255 | 0, c.g * 255 | 0, c.b * 255 | 0];
   }
   const c565 = c => [(c >> 11) / 31 * 255, ((c >> 5) & 63) / 63 * 255, (c & 31) / 31 * 255];
@@ -362,8 +452,8 @@ export default function create(ctx) {
   }
   const ringArea = r => { let a = 0; for (let j = 0; j < r.length; j++) { const p = r[j], q = r[(j + 1) % r.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; };
   // growable typed vertex / index buffers
-  function makeBuf() {
-    let cap = 1 << 18, icap = 1 << 19;
+  function makeBuf(c0) {
+    let cap = c0, icap = c0 * 2;
     const B = { n: 0, ni: 0, pos: new Float32Array(cap * 3), ap: new Int16Array(cap * 2), af: new Uint16Array(cap * 4), ac: new Uint8Array(cap * 4), idx: new Uint32Array(icap) };
     const grow = a => { const b = new a.constructor(a.length * 2); b.set(a); return b; };
     B.need = (nv, ni) => {
@@ -375,8 +465,21 @@ export default function create(ctx) {
   const Q = v => Math.max(-32767, Math.min(32767, Math.round(v * 16)));
 
   async function buildBuildings(buf, meta) {
-    const u = new Uint16Array(buf), s16 = new Int16Array(buf), N = u.length, v3 = meta.v >= 3;
-    const G = makeBuf(), origin = llv(meta.oy + 0.05, meta.ox + 0.05, meshKm(meta.oy + 0.05, meta.ox + 0.05)), skipSmall = phone();
+    const u = new Uint16Array(buf), s16 = new Int16Array(buf), N = u.length, v3 = meta.v >= 3, skipSmall = phone();
+    // geometry is cut into ~2.5 km chunks, each built round its own origin: frustum and distance culling then drop most of it
+    // (in the main and the shadow pass), and local coordinates stay small. Each chunk has a second, 'minor' mesh for what
+    // only shows close up (small houses, chimneys, dormers, balconies, oriels, copings) that drops out sooner.
+    const CH = 2500, chunks = new Map();
+    let G = null, Gb = null, cur = null, origin = null;
+    const chunkFor = (cx, cy) => {
+      const ix = Math.floor(cx / CH), iy = Math.floor(cy / CH), key = ix * 4096 + iy;
+      let c = chunks.get(key);
+      if (!c) {
+        const la = meta.oy + (iy + .5) * CH / meta.ky, lo = meta.ox + (ix + .5) * CH / meta.kx;
+        c = { G: makeBuf(1 << 13), Gm: makeBuf(1 << 12), origin: llv(la, lo, meshKm(la, lo)), smoke: [] }; chunks.set(key, c);
+      }
+      cur = c; G = c.G; origin = c.origin;
+    };
     const C = new V3(), Up = new V3(), Ea = new V3(), No = new V3();
     let i = 0, slice = 0;
     // current vertex context: face words and colour, set before each batch of put()s
@@ -413,12 +516,15 @@ export default function create(ctx) {
       cx /= n; cy /= n; area = Math.abs(area) / 2;
       if (skipSmall && !part && area < 90) continue;
       const lat = meta.oy + cy / meta.ky, lon = meta.ox + cx / meta.kx;
+      chunkFor(cx, cy);
       // local frame in true metres around the centroid (east, north, up)
       const base = meshKm(lat, lon);
       llv(lat, lon, base, C); Up.copy(C).normalize(); C.sub(origin);
       Ea.set(Up.z, 0, -Up.x).normalize(); No.crossVectors(Up, Ea);
       const sx = 111195 * Math.cos(lat * D2R) / meta.kx, sy = 111195 / meta.ky;
       const rm = ring.map(p => [(p[0] - cx) * sx, (p[1] - cy) * sy]);
+      if (!part && area * sx * sy < 150) G = cur.Gm;
+      Gb = G;
       // ---- what kind of building is this ----
       const cls = info & 7, style = (info >> 3) & 15, floorsD = (info >> 7) & 31, rhKnown = (info >> 12) & 1;
       let st = (Math.abs(Math.sin(cx * 12.9898 + cy * 78.233) * 43758.5453) % 1) * 2147483646 + 1 | 0;
@@ -437,14 +543,14 @@ export default function create(ctx) {
       const hM = eave + rh;
       const floors = floorsD || Math.max(1, Math.round((eave - .6) / 3.15));
       const timber = cls === 6 || (style === 4 && floors <= 5 && area < 900 && rand() < .5) || (style === 5 && !util && rand() < (area * sx * sy < 300 ? .55 : .3)) || (style === 6 && lat > 49.05 && rand() < .3);
-      const balcony = !util && !church && (style === 5 && rand() < .72 || style === 6 && lat < 48.05 && rand() < .4);
+      const balcony = !util && !church && !part && (style === 5 && rand() < .62 || style === 6 && lat < 48.05 && rand() < .35);
       const shutters = !util && !modern && !church && rand() < SHUT_P[style];
       const quoins = !util && !church && ((style === 1 || style === 3) && (area > 300 || cls === 7) && rand() < .5 || style === 0 && cls === 7 && rand() < .4 || style === 4 && !timber && rand() < .35);   // style 4: all sandstone
       const shopOK = !util && !church && floors >= 2 && (style >= 1 && style <= 4 || style === 0 && (cls === 0 || cls === 2 || cls === 4));
       // colours
       const pal = WALL[church ? 5 : style];
       let wall = pal[Math.floor(rand() * pal.length)].slice();
-      if (church) wall = rand() < .5 ? hex('#eeeae0') : hex('#efe6cf');
+      if (church) wall = style === 4 ? hex(rand() < .5 ? '#b5735a' : '#a8664f') : rand() < .5 ? hex('#eeeae0') : hex('#efe6cf');   // Nuremberg's churches are red sandstone
       if (wallC && !church) wall = pastel(c565(wallC));
       if (timber && style === 4) wall = hex('#ece6d8');
       const jit = .94 + .1 * rand(); wall = wall.map(v => Math.min(255, Math.round(v * jit)));
@@ -453,7 +559,7 @@ export default function create(ctx) {
       if (church) roofCol = rand() < .7 ? ROOF[4] : ROOF[3];
       if (type === RT.DOME || type === RT.ONION || (type === RT.CONE && church)) roofCol = rand() < .6 ? ROOF[6] : ROOF[4];
       roofCol = roofCol.map(v => Math.round(v * (.9 + .2 * rand())));
-      const snowK = rand() < .86 ? 215 + rand() * 40 | 0 : 90 + rand() * 100 | 0;
+      const sr = rand(), snowK = sr < .5 ? 232 + rand() * 23 | 0 : sr < .85 ? 160 + rand() * 60 | 0 : 80 + rand() * 80 | 0;   // half the roofs deep in snow, the rest thawing from the eaves
       const accent = Math.floor(rand() * 4) | Math.floor(rand() * 4) << 2;
       const ovm = !pitched ? 0 : church ? .3 : style === 5 ? 1.25 : util ? .3 : style >= 1 && style <= 4 ? .5 : .6;
       const ovc = Math.round(ovm / .25);
@@ -474,10 +580,10 @@ export default function create(ctx) {
         { cut: [hp(0, 1, 0)], z: p => eave + rh * (1 - toW(p) / hw), ar: p => [toV(p), Math.abs(toW(p)) * kk] },
         { cut: [hp(0, -1, 0)], z: p => eave + rh * (1 + toW(p) / hw), ar: p => [toV(p), Math.abs(toW(p)) * kk] }];
       else if (type === RT.HIP || type === RT.PYRAMID) regions = [
-        { cut: [hp(0, 1, 0), hp(-1, 1, dd), hp(1, 1, dd)], z: p => eave + rh * (1 - toW(p) / hw), ar: p => [toV(p), Math.abs(toW(p)) * kk] },
-        { cut: [hp(0, -1, 0), hp(-1, -1, dd), hp(1, -1, dd)], z: p => eave + rh * (1 + toW(p) / hw), ar: p => [toV(p), Math.abs(toW(p)) * kk] },
-        { cut: [hp(1, 0, 0), hp(1, -1, -dd), hp(1, 1, -dd)], z: p => eave + rh * (hl - toV(p)) / hw, ar: p => [toW(p), (toV(p) - dd) * kk] },
-        { cut: [hp(-1, 0, 0), hp(-1, -1, -dd), hp(-1, 1, -dd)], z: p => eave + rh * (hl + toV(p)) / hw, ar: p => [toW(p), (-toV(p) - dd) * kk] }];
+        { cut: [hp(0, 1, 0), hp(-1, 1, dd), hp(1, 1, dd)], z: p => eave + rh * (1 - toW(p) / hw), ar: p => [toV(p), Math.abs(toW(p)) * kk], d0: dd },
+        { cut: [hp(0, -1, 0), hp(-1, -1, dd), hp(1, -1, dd)], z: p => eave + rh * (1 + toW(p) / hw), ar: p => [toV(p), Math.abs(toW(p)) * kk], d0: dd },
+        { cut: [hp(1, 0, 0), hp(1, -1, -dd), hp(1, 1, -dd)], z: p => eave + rh * (hl - toV(p)) / hw, ar: p => [toW(p), (toV(p) - dd) * kk], d0: 0 },
+        { cut: [hp(-1, 0, 0), hp(-1, -1, -dd), hp(-1, 1, -dd)], z: p => eave + rh * (hl + toV(p)) / hw, ar: p => [toW(p), (-toV(p) - dd) * kk], d0: 0 }];
       else if (type === RT.SKILLION) { const k2 = Math.sqrt(1 + (rh / (2 * hw)) ** 2); regions = [{ cut: [], z: p => eave + rh * (toW(p) + hw) / (2 * hw), ar: p => [toV(p), (hw - toW(p)) * k2] }]; }
       else regions = [{ cut: [], z: () => pitched ? eave : (rh ? eave : hM), ar: p => [toV(p), toW(p)], flat: 1 }];
       const roofZ = p => {
@@ -498,7 +604,13 @@ export default function create(ctx) {
         if (!isParty(j) && l > best) { best = l; doorEdge = j; }
       }
       setC(wall, accent);
-      const kindW = tower ? 7 : 0;
+      const kindW = tower ? 7 : 0, F31 = Math.min(31, floors);
+      // the facade layout the shader will draw (ground floor, top of the top floor's windows, floor height), for parts that line up with it
+      const gS = F31 < 1.5 ? eave : style >= 1 && style <= 4 && F31 > 2.5 ? Math.min(4, eave * .36) : style === 5 ? 2.8 : 3.2;
+      const topS = eave - .32 - .1 * Math.min(F31, 5), flS = (topS - gS) / Math.max(F31 - 1, 1);
+      // Inn-Salzach towns: street fronts carried up past the eaves as a straight parapet that hides the roof
+      const parB = (style === 1 || style === 2) && (type === RT.HIP || type === RT.GABLE) && !part && !church && !util && floors >= 2 && rand() < .75;
+      const ph = 1 + .75 * Math.floor(rand() * 3), parE = new Uint8Array(n), extras = [];   // parapet heights step by .75 m (3 bits)
       for (let j = 0; j < n; j++) {
         const a = rm[j], b = rm[(j + 1) % n], ts = [0];
         const Le = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -517,8 +629,14 @@ export default function create(ctx) {
         keep.push(pts.length - 1);
         let zmax = zs[0]; for (let k = 1; k < zs.length; k++) zmax = Math.max(zmax, zs[k]);
         const party = isParty(j), gable = zmax > eave + 2.7 && Le > 4.5 && !party;
-        const A = kindW | style << 3 | Math.min(31, floors) << 7 | party << 12 | (shopOK && isStreet(j) ? 1 << 13 : 0) | (isArc(j) ? 1 << 14 : 0) | (j === doorEdge ? 1 << 15 : 0);
-        words(Math.round(Le * 16), ovc, E16, (gable ? 1 : 0) | (pitched && !party && zmax < eave + .3 ? 2 : 0), A, Bw);
+        // a straight parapet along an eaves front, or squared off over a gable (the roof then hides behind it)
+        const phE = zmax < eave + .3 ? ph : 1 + .75 * Math.ceil((zmax - eave + .35 - 1) / .75 - 1e-6);
+        const par = parB && isStreet(j) && !party && Le > 2.5 && Le < 16 && phE <= 6.25;
+        if (par) { parE[j] = 1; for (const k of keep) zs[k] = eave + phE; extras.push({ k: 'cap', j, Le, z: eave + phE }); }
+        if (!party && !par && style === 1 && isStreet(j) && Le > 7 && floors >= 3 && !util && !church && !part && rand() < .4) extras.push({ k: 'oriel', j, Le });
+        if (balcony && !party && Le > 5 && F31 >= 2 && zmax > eave + 1.2 && extras.filter(e => e.k === 'balc').length < (skipSmall ? 1 : 2)) extras.push({ k: 'balc', j, Le });   // on the gable fronts
+        const A = kindW | style << 3 | F31 << 7 | party << 12 | (shopOK && isStreet(j) ? 1 << 13 : 0) | (isArc(j) ? 1 << 14 : 0) | (j === doorEdge ? 1 << 15 : 0);
+        words(Math.round(Le * 16), par ? Math.round((phE - 1) / .75) : ovc, E16, (gable ? 1 : 0) | (pitched && !party && !par && zmax < eave + .3 ? 2 : 0) | (par ? 4 : 0), A, Bw);
         G.need(keep.length * 2, keep.length * 6);
         let pb = -1, pt = -1;
         for (const k of keep) {
@@ -527,8 +645,48 @@ export default function create(ctx) {
           pb = vb; pt = vt;
         }
       }
-      // ---- roof faces, cut from the footprint pushed out by the eaves (party walls get none) ----
-      const ringO = ovm > 0 ? offsetRing(rm, rm.map((_, j) => isParty(j) ? 0 : ovm), 2.5 * ovm) : rm;
+      // ---- parapet copings, oriels and wooden balconies along the walls ----
+      G = cur.Gm;
+      if (balcony && !extras.some(e => e.k === 'balc')) {        // hipped farmhouses: one balcony on the sunniest long side
+        let bj = -1, bs = .2;
+        for (let j = 0; j < n; j++) {
+          const a = rm[j], b = rm[(j + 1) % n], l = Math.hypot(b[0] - a[0], b[1] - a[1]), sN = (b[0] - a[0]) / l;   // outward normal's south part
+          if (!isParty(j) && l > 5.5 && sN * Math.min(1, l / 9) > bs) { bs = sN * Math.min(1, l / 9); bj = j; }
+        }
+        if (bj >= 0 && F31 >= 2) extras.push({ k: 'balc', j: bj, Le: Math.hypot(rm[(bj + 1) % n][0] - rm[bj][0], rm[(bj + 1) % n][1] - rm[bj][1]) });
+      }
+      for (const e of extras) {
+        const a = rm[e.j], b = rm[(e.j + 1) % n], tx = (b[0] - a[0]) / e.Le, ty = (b[1] - a[1]) / e.Le, ox = ty, oy = -tx;   // along, outward
+        const P = (s, o) => [a[0] + tx * s + ox * o, a[1] + ty * s + oy * o];
+        const quad = (p0, p1, z0, z1, u0, u1) => { const s0 = G.n; put(p0[0], p0[1], z0, u0, z0); put(p1[0], p1[1], z0, u1, z0); put(p1[0], p1[1], z1, u1, z1); put(p0[0], p0[1], z1, u0, z1); tri(s0, s0 + 1, s0 + 2); tri(s0, s0 + 2, s0 + 3); };
+        const flat = (p0, p1, p2, p3, z) => { const s0 = G.n; for (const p of [p0, p1, p2, p3]) put(p[0], p[1], z, 0, 0); tri(s0, s0 + 1, s0 + 2); tri(s0, s0 + 2, s0 + 3); };
+        if (e.k === 'cap') {          // the parapet's coping: a snowy ledge on top of the wall
+          const z = e.z; G.need(4, 6);
+          setC(wall.map(v => v * .85), snowK); words(8, 0, 0, 0, 5 | style << 3, Bw);
+          flat(P(0, .05), P(e.Le, .05), P(e.Le, -.3), P(0, -.3), z);
+        } else if (e.k === 'oriel') {  // an Erker: a bay window box through the upper floors, with a little snowy roof
+          const w = Math.min(3, e.Le * .3), s0 = e.Le * (.3 + .4 * rand()) - w / 2, dp = .75, z0 = gS + .3, z1 = topS + .18;
+          if (s0 < 1 || s0 + w > e.Le - 1) continue;
+          G.need(16, 24); setC(wall, accent);
+          const Ao = style << 3 | F31 << 7, Bo = Bw & ~(256 | 512);
+          words(Math.round(dp * 16), 0, E16, 0, Ao, Bo); quad(P(s0, 0), P(s0, dp), z0, z1, 0, dp);
+          words(Math.round(w * 16), 0, E16, 0, Ao, Bo); quad(P(s0, dp), P(s0 + w, dp), z0, z1, 0, w);
+          words(Math.round(dp * 16), 0, E16, 0, Ao, Bo); quad(P(s0 + w, dp), P(s0 + w, 0), z0, z1, 0, dp);
+          setC(rand() < .5 ? ROOF[6] : ROOF[4], snowK); words(8, 0, 0, 0, 5 | style << 3, Bw);
+          flat(P(s0 - .1, -.1), P(s0 + w + .1, -.1), P(s0 + w + .1, dp + .1), P(s0 - .1, dp + .1), z1);
+        } else {                       // a wooden balcony at the top floor: snowy deck, fascia board and a slatted railing
+          const zb = Math.max(gS, topS - flS) + .08, dp = style === 5 ? 1.15 : .95, s0 = .3, s1 = e.Le - .3;
+          if (zb + 1 > eave + (pitched ? 2 : -.2)) continue;
+          const wood = [[92, 58, 36], [74, 46, 30], [110, 70, 42], [64, 44, 32]][accent >> 2 & 3];
+          G.need(16, 24);
+          setC(wood, snowK); words(8, 0, 0, 0, 5 | style << 3, Bw); flat(P(s0, 0), P(s1, 0), P(s1, dp), P(s0, dp), zb);
+          setC(wood, 0); words(0, 0, Math.round((zb + 1) * 16), 0, 6 | style << 3, Bw | 32768);
+          quad(P(s0, 0), P(s0, dp), zb, zb + 1, 0, dp); quad(P(s0, dp), P(s1, dp), zb - .2, zb + 1, 0, s1 - s0); quad(P(s1, dp), P(s1, 0), zb, zb + 1, 0, dp);
+        }
+      }
+      G = Gb;
+      // ---- roof faces, cut from the footprint pushed out by the eaves (party walls and parapets get none) ----
+      const ringO = ovm > 0 ? offsetRing(rm, rm.map((_, j) => isParty(j) || parE[j] ? 0 : ovm), 2.5 * ovm) : rm;
       // Big blocks coded flat get hipped wings round the edge (and a courtyard when there is room), as old-town blocks have
       let wing = null;
       const aM = area * sx * sy;
@@ -609,7 +767,8 @@ export default function create(ctx) {
         for (const [a, b, c] of r.cut) { poly = clipHalf(poly, a, b, c); if (poly.length < 3) break; }
         if (poly.length < 3) continue;
         const tris = THREE.ShapeUtils.triangulateShape(poly.map(p => new THREE.Vector2(p[0], p[1])), []);
-        words(r.flat ? 8 : re16, 0, r.flat ? 0 : ve16, 0, (r.flat ? 5 : 1) | style << 3, Bw);
+        const hipF = r.d0 !== undefined;
+        words(r.flat ? 8 : re16, 0, r.flat ? 0 : hipF ? Math.round(r.d0 * 16) : ve16, hipF ? 1 : 0, (r.flat ? 5 : 1) | style << 3, Bw);
         G.need(poly.length, tris.length * 3);
         const s0 = G.n;
         for (const p of poly) { const [aa, rr] = r.ar(p); put(p[0], p[1], r.z(p), aa, rr); }
@@ -629,6 +788,7 @@ export default function create(ctx) {
           tri(a, b, b + seg); tri(a, b + seg, a + seg);
         }
       }
+      G = cur.Gm;
       // ---- chimneys: a small rendered stack near the ridge of most pitched roofs ----
       if (pitched && !util && !church && !part && area > 35 && area < 1600 && rh > 1 && rand() < (style === 7 ? .3 : .78)) {
         const cnt = area > 260 && rand() < .5 ? 2 : 1;
@@ -646,6 +806,10 @@ export default function create(ctx) {
           for (const p of cs) put(p[0], p[1], z1, 0, z1);
           for (let k = 0; k < 4; k++) { const k2 = (k + 1) % 4; tri(s0 + k, s0 + k2, s0 + 4 + k2); tri(s0 + k, s0 + 4 + k2, s0 + 4 + k); }
           tri(s0 + 4, s0 + 5, s0 + 6); tri(s0 + 4, s0 + 6, s0 + 7);
+          if (rand() < SMOKE_P) {          // a wood or tiled stove is lit: this chimney smokes
+            const pz = (z1 + .1) * BHS * .001, x = pc[0] * .001, y = pc[1] * .001;
+            cur.smoke.push(C.x + Ea.x * x + No.x * y + Up.x * pz, C.y + Ea.y * x + No.y * y + Up.y * pz, C.z + Ea.z * x + No.z * y + Up.z * pz);
+          }
         }
       }
       // ---- dormers along the long slopes of big old-town roofs ----
@@ -684,18 +848,50 @@ export default function create(ctx) {
         }
       }
     }
-    const g = new THREE.BufferGeometry(), nv = G.n;
-    g.setAttribute('position', new THREE.BufferAttribute(G.pos.slice(0, nv * 3), 3));
-    g.setAttribute('aP', new THREE.BufferAttribute(G.ap.slice(0, nv * 2), 2));
-    g.setAttribute('aF', new THREE.BufferAttribute(G.af.slice(0, nv * 4), 4));
-    g.setAttribute('aC', new THREE.BufferAttribute(G.ac.slice(0, nv * 4), 4, true));
-    g.setIndex(new THREE.BufferAttribute(G.idx.slice(0, G.ni), 1));
-    const mat = bldgMat.clone();
-    for (const key of Object.keys(uni)) mat.uniforms[key] = uni[key];
-    mat.uniforms.uOrigin.value.copy(origin);
-    const mesh = new THREE.Mesh(g, mat); mesh.position.copy(origin); mesh.frustumCulled = false;
-    mesh.layers.enable(SHADOW_LAYER);
-    return mesh;
+    // The pack's mesh is an empty holder whose (invisible) material carries the uniforms the chunks share (uFade, shadows...)
+    const master = bldgMat.clone();
+    for (const key of Object.keys(uni)) master.uniforms[key] = uni[key];
+    master.visible = false;
+    const root = new THREE.Mesh(new THREE.BufferGeometry(), master); root.frustumCulled = false;
+    const list = [];
+    for (const { G: B0, Gm, origin: o } of chunks.values()) for (const [B, far] of [[B0, FAR], [Gm, MINOR]]) {
+      const nv = B.n; if (!nv) continue;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(B.pos.slice(0, nv * 3), 3));
+      g.setAttribute('aP', new THREE.BufferAttribute(B.ap.slice(0, nv * 2), 2));
+      g.setAttribute('aF', new THREE.BufferAttribute(B.af.slice(0, nv * 4), 4));
+      g.setAttribute('aC', new THREE.BufferAttribute(B.ac.slice(0, nv * 4), 4, true));
+      g.setIndex(new THREE.BufferAttribute(nv < 65536 ? Uint16Array.from(B.idx.subarray(0, B.ni)) : B.idx.slice(0, B.ni), 1));
+      g.computeBoundingSphere();
+      const mat = master.clone(); mat.visible = true;
+      for (const key of Object.keys(master.uniforms)) if (key !== 'uOrigin' && key !== 'uShadowM') mat.uniforms[key] = master.uniforms[key];
+      mat.uniforms.uOrigin.value.copy(o);
+      const mesh = new THREE.Mesh(g, mat); mesh.position.copy(o); mesh.layers.enable(SHADOW_LAYER);
+      mesh.userData.far = far; mesh.userData.wc = g.boundingSphere.center.clone().add(o);
+      root.add(mesh); list.push(mesh);
+    }
+    // chimney smoke: a few soft puffs per smoking chimney, drifting off on a light westerly
+    const sMat = smokeMat.clone(), smokes = [];
+    for (const key of Object.keys(uni)) sMat.uniforms[key] = uni[key];
+    sMat.uniforms.uFade = master.uniforms.uFade;
+    for (const { smoke, origin: o } of chunks.values()) {
+      const np = smoke.length / 3; if (!np) continue;
+      const pos = new Float32Array(np * PUFFS * 3), aS = new Float32Array(np * PUFFS * 2);
+      for (let q = 0; q < np; q++) {
+        const sd = Math.abs(Math.sin(q * 91.7 + smoke[q * 3] * 7e3) * 43758.5) % 1;
+        for (let k = 0; k < PUFFS; k++) { const m = q * PUFFS + k; pos.set(smoke.slice(q * 3, q * 3 + 3), m * 3); aS[m * 2] = (k + sd * .6) / PUFFS; aS[m * 2 + 1] = sd; }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('aS', new THREE.BufferAttribute(aS, 2));
+      g.computeBoundingSphere(); g.boundingSphere.radius += .05;
+      const pts = new THREE.Points(g, sMat); pts.position.copy(o); pts.renderOrder = 4;
+      pts.userData.far = SMOKE_FAR; pts.userData.wc = g.boundingSphere.center.clone().add(o);
+      root.add(pts); smokes.push(pts);
+    }
+    root.userData.chunks = list; root.userData.smoke = smokes;
+    const gd = root.geometry.dispose.bind(root.geometry);
+    root.geometry.dispose = () => { for (const m of list.concat(smokes)) { m.geometry.dispose(); m.material.dispose(); } gd(); };
+    return root;
   }
 
   // ---- sun shadows: the buildings' depth seen from the low winter sun, re-rendered only when the view moves on ----
@@ -726,9 +922,14 @@ export default function create(ctx) {
     }
     recvGeo.attributes.position.needsUpdate = true; recv.position.copy(o); recv.updateMatrixWorld();
   }
+  const camL = new V3();
   function update(dt) {
+    const mesh = ctx.state.packMesh, mine = mesh && mesh.userData.chunks;
+    if (mine) {     // drop chunks (and their smoke) past their fade-out distance
+      camL.copy(ctx.camera.position);
+      for (const L of [mesh.userData.chunks, mesh.userData.smoke]) for (const c of L) c.visible = c.userData.wc.distanceTo(camL) < c.userData.far + c.geometry.boundingSphere.radius;
+    }
     if (!SHADOWS) return;
-    const mesh = ctx.state.packMesh, mine = mesh && mesh.material.uniforms && mesh.material.uniforms.uShadowM;
     const want = mine && mesh.visible && !ctx.city && cam.dist < 4.5 ? 1 : 0;
     sOn += (want - sOn) * Math.min(1, dt * 3);
     const on = mine && srt ? sOn * mesh.material.uniforms.uFade.value : 0;
@@ -755,7 +956,7 @@ export default function create(ctx) {
     sM.copy(BIAS).multiply(scam.projectionMatrix).multiply(scam.matrixWorldInverse);
     const texel = half * 2000 / SM;
     for (const u of [mesh.material.uniforms, recvMat.uniforms]) { u.uShadow.value = srt.depthTexture; u.uShadowTexel.value = texel; }
-    mesh.material.uniforms.uShadowM.value.copy(sM).multiply(mesh.matrixWorld);
+    for (const c of mesh.userData.chunks) c.material.uniforms.uShadowM.value.copy(sM).multiply(c.matrixWorld);
     drape(T, half * .97);
     recvMat.uniforms.uShadowM.value.copy(sM).multiply(recv.matrixWorld);
   }
