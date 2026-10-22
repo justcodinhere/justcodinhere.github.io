@@ -835,15 +835,26 @@ function placeObj(obj, pos, tan, scale, keepPitch) {
   _m.makeBasis(_x, _y, _z); obj.quaternion.setFromRotationMatrix(_m);
   obj.position.copy(pos); obj.scale.setScalar(scale);
 }
-const vScale = (pos, k, min) => Math.max(min, camera.position.distanceTo(pos) * k * (phone() ? 1.45 : 1));
-const _tan = new V3(), _tp = new V3();
-function drawPlane(obj, path, d) { const p = path.at(d, new V3(), _tan); placeObj(obj, p, _tan, vScale(p, .05, .06), true); obj.visible = true; return p; }
-function drawTrain(path, d) {
-  const lead = path.at(d, new V3(), _tan), s = vScale(lead, .018, .025);
-  cars.forEach((c, i) => { const q = path.at(d - i * s * .97, _tp, _tan); placeObj(c, q, _tan, s); });
-  train.visible = true; return lead;
+// Vehicles keep a steady size on screen (a share of the camera distance), never below about life size. Planes size to the
+// narrower side of the screen, so on a portrait phone the jet isn't three times too big for the landing shot.
+const vScale = (pos, k, min, air) => Math.max(min, camera.position.distanceTo(pos) * k * (air ? Math.min(1, camera.aspect * 1.4) : phone() ? 1.1 : 1));
+const _tan = new V3(), _tp = new V3(), _sn = new V3();
+const llOf = p => { const n = _sn.copy(p).normalize(); return [Math.asin(n.y) / D2R, Math.atan2(n.x, n.z) / D2R]; };
+// Near life size a ground vehicle stands on the ground the GPU draws; blown up for a wide shot it rides its route
+// ribbon (50 m up), so the line still runs under it. userData.air: how far it has risen (0..1).
+function sit(obj, p, s, min) { const a = smooth(1.3, 3, s / min); p.setLength(R + lerp(meshKm(...llOf(p)), p.length() - R, a)); obj.userData.air = a; return p; }
+function drawPlane(obj, path, d) {
+  const p = path.at(d, new V3(), _tan), s = vScale(p, .05, .06, true), g = meshKm(...llOf(p)), foot = (obj.userData.foot ?? .1) * s;
+  if (p.length() - R - g < foot) p.setLength(R + g + foot);            // on the runway it stands on its wheels
+  placeObj(obj, p, _tan, s, true); obj.userData.path = path; obj.userData.d = d; obj.visible = true; return p;
 }
-function drawVan(path, d) { const p = path.at(d, new V3(), _tan); placeObj(van, p, _tan, vScale(p, .02, .012)); van.visible = true; return p; }
+function drawTrain(path, d) {   // train.userData.offs: where each car's centre sits behind the first, in scale units
+  const lead = path.at(d, new V3(), _tan), s = vScale(lead, .026, .025), off = train.userData.offs || [0, .97, 1.94, 2.91];
+  cars.forEach((c, i) => { const q = path.at(d - off[i] * s, _tp, _tan); placeObj(c, sit(c, q, s, .025), _tan, s); });
+  train.userData.path = path; train.userData.d = d; train.visible = true; return lead;
+}
+function drawVan(path, d) { const p = path.at(d, new V3(), _tan), s = vScale(p, .04, .008); placeObj(van, sit(van, p.clone(), s, .008), _tan, s); van.visible = true; return p; }
+const vehicles = { plane, plane2, van, train, cars };
 function hideVehicles() { [plane, plane2, van, train].forEach(o => o.visible = false); }
 
 /* ---------- clouds: alpine puffs, a bank around the detailed patch, and a veil for big zooms ---------- */
@@ -2019,12 +2030,13 @@ const ctx = {
   THREE, V3, R, D2R, EXAG, BHS, BB, GRID, uni, scene, camera, renderer, cam, state, clock, POI, PL,
   NOISE, LATLON, HAZE, LIGHT, ribbonVS, ribbonGeom, ribbonMeshes, Path, groundPath,
   llv, enu, ground, terrainKm, meshKm, heightM, phone, clamp, lerp, smooth, ease, loadTex, reduceMotion,
+  vehicles,
   get city() { return city; }, get step() { return STEPS[state.step]; }, get activePack() { return activePack; },
   get winter() { return uni.uWinter.value; }, get time() { return uni.uTime.value; },
 };
 async function loadFeatures() {
   const only = new URLSearchParams(location.search).get('only');    // ?only=water,life for testing one feature
-  const names = ['buildings', 'water', 'life', 'landmarks', 'trees'].filter(n => !only || only.split(',').includes(n) || n === 'buildings');
+  const names = ['buildings', 'water', 'life', 'landmarks', 'trees', 'vehicles'].filter(n => !only || only.split(',').includes(n) || n === 'buildings');
   await Promise.all(names.map(async n => {
     try {
       const mod = await import(`./js/${n}.js`);

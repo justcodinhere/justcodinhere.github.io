@@ -15,8 +15,17 @@ the file directly from disk won't load the map data).
   plus a light frost on the lowlands. The "Winter snow" chip turns it off.
 - Rivers (Inn, Isar, Salzach, Danube) drawn as flowing water, snapped to the
   valley floor using the elevation data.
-- Train, private car and plane stand-ins that travel the actual routes, with a
-  chase camera for the ground legs.
+- The plane, trains and car travel the actual routes, with a chase camera for
+  the ground legs (`js/vehicles.js`). A twin-engine long-haul jet (a narrowbody
+  on the short US hops) in a plain white and navy livery: cabin windows, swept
+  wings with raked tips, big fan engines, nav lights, strobes and a beacon, gear
+  that drops for landing and folds after take-off, and faint contrails at cruise.
+- Trains to match each leg: a Railjet-style set (a Taurus-style engine and dark
+  red and grey coaches) to Innsbruck, a white ICE-style set with its red stripe
+  to Nuremberg, and the S-Bahn from the airport, with lit window bands, doors,
+  bogies, roof gear and a raised pantograph under masts and wires near the
+  train. The car is a dark MPV with lit lamps, a little snow on the roof and
+  slush spray from the wheels in winter.
 - Clouds: a cloud layer on the globe, puffs over the Alps, a cloud bank around
   the edge of the detailed patch, and a full-screen cloud pass during big
   zooms (globe ↔ valley) that hides the change in detail.
@@ -144,8 +153,7 @@ snapping). They expect a `data/` working folder and `rasterio`, `mgrs`,
 ## Next steps if we keep going
 
 - Swap the code-built vehicles for Blender models: export `.glb` files and load
-  them with three.js `GLTFLoader` in place of `makePlane`, `makeTrainCar` and
-  `makeVan`.
+  them with three.js `GLTFLoader` into the groups `js/vehicles.js` fills.
 - Free government data (needs these hosts allowed in the session's network
   settings): Bavaria's LoD2 buildings with surveyed roofs, 40 cm aerial photos
   (DOP40) and 1 m terrain; basemap.at aerial photos and Tyrol terrain for

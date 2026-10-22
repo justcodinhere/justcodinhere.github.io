@@ -11,8 +11,7 @@ m=lambda lon,lat:(lon*KX,lat*KY)
 routes={k:LineString([m(*p) for p in geo['routes'][k]]) for k in ('apt_city','muc_ibk','muc_nue','muc_neusch')}
 packroute={'munich':'apt_city','inn':'muc_ibk','nue':'muc_nue','neu':'muc_neusch'}
 packboxes={'munich':{'munich'},'inn':{'munich','ibk','kufstein','hall','rattenberg'},'nue':{'munich','nue'},'neu':{'munich','fuessen','schwangau'}}
-LM=[(48.1386,11.5736,70),(48.1374,11.5755,60),(48.1364,11.5757,30),(48.1388,11.5706,50),(47.2692,11.3938,45),(47.2683,11.3956,40),(49.4577,11.0759,90),(49.4509,11.0786,45),(47.5576,10.7498,120),(47.5553,10.7364,60),(47.5836,12.1706,90),(49.4540,11.0775,25),(47.2686,11.3933,12),(47.2490,11.3995,40),(47.6811,10.9002,60),(49.4545,11.0779,25)]
-LMm=[(m(lo,la),r) for la,lo,r in LM]
+# (no landmark holes: js/buildings.js skips the footprints inside each landmark's mask at runtime, assets/landmarks)
 NAMED={'white':'#f2f0ea','red':'#9c3b2c','darkred':'#7a2a20','brown':'#7a4a32','grey':'#8a8a88','gray':'#8a8a88','darkgrey':'#555555','darkgray':'#555555','black':'#2a2a2a',
  'yellow':'#e0c36a','beige':'#d9c9a3','orange':'#c97a3a','green':'#5d8c78','lightgrey':'#c8c8c4','lightgray':'#c8c8c4','silver':'#b8bcc0','pink':'#d8a4a0','blue':'#4a6a8a','maroon':'#6a2a22','cream':'#efe4c8','tan':'#c8a878'}
 def col565(c):
@@ -57,7 +56,6 @@ def prep(r,part):
   except Exception: return None
   if pm is None or not pm.is_valid or pm.area<(8 if part else 35): return None
   c=pm.centroid
-  if any(math.hypot(c.x-p[0],c.y-p[1])<rr for p,rr in LMm): return None
   ps=pm.simplify(.6 if part else 1.0,preserve_topology=True)
   if ps.geom_type!='Polygon': return None
   co=list(ps.exterior.coords)[:-1]

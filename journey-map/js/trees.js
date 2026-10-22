@@ -3,16 +3,17 @@
 // and on the riverbanks bare lime, beech, oak, maple, chestnut, birch, poplar and willow: trunk and main limbs inside a
 // fine, frosted twig crown with snow along the upper branches. Leaves and no snow when winter is off.
 // Species and heights come from the pack (tools/trees.py). A forest point is a stand: close to the camera it grows into a
-// small group of trees on the local ground slope. Three levels of detail: a detailed set gathered around the camera, a
-// simpler mid set, and far blocks of simple shapes; each tree is drawn by exactly one of them (a dithered hand-over by
-// distance). The buildings' sun shadows fall on the trees near the camera.
+// small group of trees on the local ground slope (the trees thin out again with distance). Three levels of detail: a
+// detailed set and a simpler mid set gathered around the camera as it moves, and far blocks of simple shapes; each tree is
+// drawn by exactly one of them (a dithered hand-over by distance). The buildings' sun shadows fall on the trees near the camera.
 // create(ctx) returns { buildTrees(meta, buildingsMesh) -> Promise<THREE.Group> (with .dispose()), update(dt, alt), onCity(on) }.
 export default function create(ctx) {
   const { THREE, V3, D2R, BB, BHS, EXAG, uni, NOISE, HAZE, LIGHT, scene, camera, renderer, llv, terrainKm, heightM, phone, clamp } = ctx;
   const lite = phone();
   const END = `\n#include <tonemapping_fragment>\n      gl_FragColor=linearToOutputTexel(gl_FragColor);`;
-  // km: detailed set out to R0, mid set to R1, far blocks to R2; hand-over bands B0..B2; gather margins M0, M1
-  const R0 = lite ? .6 : 1, R1 = lite ? 1.8 : 2.6, R2 = lite ? 6.5 : 9.5, B0 = lite ? .18 : .25, B1 = lite ? .4 : .6, B2 = lite ? 1.2 : 1.6;
+  // km: detailed set out to R0 (bare trees to R0B: their twig detail is finer than a pixel beyond), mid set to R1, far
+  // blocks to R2; hand-over bands B0..B2; gather margins M0, M1
+  const R0B = lite ? .35 : .5, R0 = lite ? .5 : .8, R1 = lite ? 1.8 : 2.6, R2 = lite ? 6.5 : 9.5, B0 = lite ? .18 : .25, B1 = lite ? .4 : .6, B2 = lite ? 1.2 : 1.6;
   const M0 = .12, M1 = .3, KMAX = lite ? 6 : 9;
 
   /* ---------- species (same order as tools/trees.py) ---------- */
@@ -43,20 +44,13 @@ export default function create(ctx) {
   };
   const FAM = s => s === 2 ? 1 : s === 3 ? 2 : s >= 6 ? 3 : 0;         // 0 spruce-like, 1 pine, 2 larch, 3 broadleaf
 
-  /* ---------- templates: one tree (or a stand of K) as parameters the vertex shader turns into shape ---------- */
-  // position and aT hold template coordinates (decoded per family below), aC the child index within a stand.
-  function tmpl(build, K) {
+  /* ---------- templates: one tree as parameters the vertex shader turns into shape ---------- */
+  // position and aT hold template coordinates, decoded per family in the vertex shaders below.
+  function tmpl(build) {
     const o = { P: [], T: [], I: [] }; build(o);
-    const nv = o.P.length / 3, ni = o.I.length;
-    const pos = new Float32Array(nv * 3 * K), at = new Float32Array(nv * 4 * K), ac = new Float32Array(nv * K);
-    const ix = new (nv * K > 65535 ? Uint32Array : Uint16Array)(ni * K);
-    for (let c = 0; c < K; c++) {
-      pos.set(o.P, c * nv * 3); at.set(o.T, c * nv * 4); ac.fill(c, c * nv, (c + 1) * nv);
-      for (let k = 0; k < ni; k++) ix[c * ni + k] = o.I[k] + c * nv;
-    }
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('aT', new THREE.BufferAttribute(at, 4));
-    g.setAttribute('aC', new THREE.BufferAttribute(ac, 1)); g.setIndex(new THREE.BufferAttribute(ix, 1));
+    g.setAttribute('position', new THREE.Float32BufferAttribute(o.P, 3)); g.setAttribute('aT', new THREE.Float32BufferAttribute(o.T, 4));
+    g.setIndex(o.I);
     return g;
   }
   const vtx = (o, a, b, c, d, e, f, g) => { o.P.push(a, b, c); o.T.push(d, e, f, g); return o.P.length / 3 - 1; };
@@ -114,43 +108,34 @@ export default function create(ctx) {
     band(o, rows[0], rows[1]); const ap = vtx(o, 1, 0, 0, 3, 0, 0, 0);
     for (let s = 0; s < NS; s++) o.I.push(rows[1][s], rows[1][(s + 1) % NS], ap);
   };
-  // [family][program] -> [lod0 stand, lod0 single, lod1 stand, lod1 single, lod2]
+  // per program: [detailed, mid, far]
   const T = {
-    con: [conB(6, 6, 1, 4, 1, 1), conB(3, 5, 0, 3, 0, 1), conB(1, 4, 0, 0, 0, 0)],
+    con: [conB(6, 5, 1, 4, 1, 1), conB(3, 5, 0, 3, 0, 1), conB(1, 4, 0, 0, 0, 0)],
     pine: [pineB(5, [-.06, .45, .97], 4, 6, 1), pineB(3, [-.06, .97], 2, 5, 0), pineB(0, [], 1, 4, 0)],
-    wood: [woodB(5, 3, 4, 3, 3, 2), woodB(3, 2, 3, 2, 3, 0), null],
+    wood: [woodB(4, 3, 4, 3, 3, 1), woodB(3, 2, 3, 2, 3, 0), null],
     larchwood: [woodB(4, 2, 6, 2, 3, 0), woodB(3, 2, 0, 2, 3, 0), null],
     shell: [sphB(1), sphB(0), octB()],
     larchshell: [coneB(7), coneB(5), coneB(4)],
   };
   const TPL = {};
-  // broadleaf stands get six trees per cell close up (wide crowns), the narrow conifers nine
-  for (const [k, b] of Object.entries(T)) TPL[k] = [b[0] && tmpl(b[0], k === 'wood' || k === 'shell' ? 6 : 9), b[0] && tmpl(b[0], 1), b[1] && tmpl(b[1], 4), b[1] && tmpl(b[1], 1), b[2] && tmpl(b[2], 2)];
+  for (const [k, b] of Object.entries(T)) TPL[k] = b.map(f => f && tmpl(f));
 
   /* ---------- shaders ---------- */
-  const VHEAD = NOISE + `attribute vec4 aT; attribute float aC; attribute vec4 iA, iB;
-    uniform vec4 uLod; uniform vec3 uR; uniform float uKmax; uniform mat4 uShadowM;
+  // iA: ground point (relative to the mesh), height (km); iB: distance it fades out at, -, seed, species + 16 * stand flags
+  const VHEAD = NOISE + `attribute vec4 aT; attribute vec4 iA, iB;
+    uniform vec4 uLod; uniform mat4 uShadowM;
     uniform vec4 uSpA[16], uSpB[16], uSpC[16], uSpD[16];
     varying vec3 vP, vN, vL, vS, vU, vV; varying vec4 vX, vC1, vC2; varying float vD;
     float hs1(float x){ return fract(sin(x*12.9898+.731)*43758.5453); }
-    vec3 gE, gN, gU, gB, gE0; float gH, gS, gSp, gF, gD;
-    // which tree of the instance this vertex belongs to, where it stands and whether this level of detail draws it
+    vec3 gE, gN, gU, gB; float gH, gS, gSp, gF, gD;
+    // where this tree stands, and whether this level of detail draws it now
     bool tree(){
       gSp=floor(mod(iB.w,16.)+.5); gF=floor(iB.w/16.+.001);
       vec3 o=vec3(modelMatrix[3]), wp=iA.xyz+o; gD=distance(wp,cameraPosition);
       float hs=fract(iB.z*7.31+.13);
-      if(gD<uLod.x+(hs-.5)*uLod.z||gD>=uLod.y+(hs-.5)*uLod.w) return false;
-      gU=normalize(wp); gE=normalize(vec3(gU.z,0.,-gU.x)); gN=cross(gU,gE); gE0=gE;
-      float c=aC; vec2 off=vec2(0.);
-      gS=fract(iB.z*91.7+c*.6180339); gH=iA.w;
-      if(gF>.5){                  // a stand: children on an R2 sequence across its cell, thinning out with distance
-        if(c>=uKmax) return false;
-        float rc=c<.5?1e9:c<1.5?uR.z:c<3.5?uR.y:uR.x;
-        if(gD>rc*(.7+.3*hs1(c*7.13+iB.z*31.7))) return false;
-        off=(fract(.5+c*vec2(.7548776662,.5698402910)+vec2(iB.z,fract(iB.z*13.7)))-.5)*(gF>1.5?.08:.04);
-        if(c>.5) gH*=.72+.48*hs1(gS*17.3);
-      } else if(c>.5) return false;
-      gB=iA.xyz+gE*off.x+gN*off.y+gU*dot(iB.xy,off);
+      if(gD<uLod.x+(hs-.5)*uLod.z||gD>=uLod.y+(hs-.5)*uLod.w||gD>iB.x) return false;
+      gU=normalize(wp); gE=normalize(vec3(gU.z,0.,-gU.x)); gN=cross(gU,gE);
+      gS=iB.z; gH=iA.w; gB=iA.xyz;
       float th=gS*6.2832; vec3 ex=gE*cos(th)+gN*sin(th); gN=gN*cos(th)-gE*sin(th); gE=ex;
       return true;
     }
@@ -357,23 +342,23 @@ export default function create(ctx) {
       // summer: a leafy crown instead
       vec3 lf=vec3(.035,.07,.022)*(.7+.6*s2)*li; float als=.92*smoothstep(0.,.25,facing)*smoothstep(.25,.42,t+.1*s2);
       col=mix(lf,col,uWinter); al=mix(als,al,uWinter);
+      if(al<.012) discard;
       col=applyHaze(col,vD,uAlt);
       gl_FragColor=vec4(col,al);` + END + `}`;
 
   /* ---------- materials: one program per kind, a clone per mesh (own origin and shadow matrix) ---------- */
   const shU = { uShadow: { value: null }, uShadowOn: { value: 0 }, uShadowTexel: { value: 1 } };
   // bare crowns are a faint haze beyond a few km: they stop at R2B, the dark conifers carry on to R2
-  const R2B = R2 * .6, lodU = [V4(-1e9, R0, 0, B0), V4(R0, R1, B0, B1), V4(R1, R2, B1, B2), V4(R1, R2B, B1, B2)].map(value => ({ value }));
-  const radU = { value: new V3(R0, R1, R2) }, kmaxU = { value: KMAX };
+  const R2B = R2 * .6, lodU = [V4(-1e9, R0, 0, B0), V4(R0, R1, B0, B1), V4(R1, R2, B1, B2), V4(R1, R2B, B1, B2), V4(-1e9, R0B, 0, B0), V4(R0B, R1, B0, B1)].map(value => ({ value }));
   let MAT = null;
   function materials() {
     const mk = (vs, fs, transparent) => new THREE.ShaderMaterial({
-      uniforms: { ...uni, ...SPU, ...shU, uLod: lodU[0], uR: radU, uKmax: kmaxU, uShadowM: { value: new THREE.Matrix4() }, uDetail: { value: 0 } },
+      uniforms: { ...uni, ...SPU, ...shU, uLod: lodU[0], uShadowM: { value: new THREE.Matrix4() }, uDetail: { value: 0 } },
       vertexShader: vs, fragmentShader: fs, side: transparent ? THREE.FrontSide : THREE.DoubleSide, transparent, depthWrite: !transparent, extensions: { derivatives: true },
     });
     MAT = { con: mk(conVS, conFS(), false), pine: mk(pineVS, pineFS(), false), wood: mk(woodVS, woodFS(), false), shell: mk(shellVS, shellFS(), true) };
   }
-  const SHARED = [...Object.keys(uni), ...Object.keys(SPU), ...Object.keys(shU), 'uR', 'uKmax'];
+  const SHARED = [...Object.keys(uni), ...Object.keys(SPU), ...Object.keys(shU)];
   const mShadow = new THREE.Matrix4(), _t = new V3();
   let shadowSrc = null;                  // a building chunk whose shadow matrix (map from its local space) we re-base
   function onShadow() {
@@ -386,17 +371,18 @@ export default function create(ctx) {
   const PROG = [[['con', 'con']], [['pine', 'pine']], [['wood', 'larchwood'], ['shell', 'larchshell']], [['wood', 'wood'], ['shell', 'shell']]];
   function makeMesh(tpl, iA, iB, prog, lod) {
     const g = new THREE.InstancedBufferGeometry();
-    g.setIndex(tpl.index); for (const k of ['position', 'aT', 'aC']) g.setAttribute(k, tpl.attributes[k]);
+    g.setIndex(tpl.index); for (const k of ['position', 'aT']) g.setAttribute(k, tpl.attributes[k]);
     g.setAttribute('iA', iA); g.setAttribute('iB', iB); g.instanceCount = 0; g.boundingSphere = new THREE.Sphere(new V3(), 1);
     const src = MAT[prog], m = src.clone();
     for (const k of SHARED) m.uniforms[k] = src.uniforms[k];
-    m.uniforms.uLod = lodU[lod === 2 && prog === 'shell' ? 3 : lod]; m.uniforms.uDetail.value = lod > 0 ? 1 : 0;
+    const bare = prog === 'shell' || prog === 'wood';
+    m.uniforms.uLod = lodU[lod === 2 ? (prog === 'shell' ? 3 : 2) : bare ? 4 + lod : lod]; m.uniforms.uDetail.value = lod > 0 ? 1 : 0;
     const mesh = new THREE.Mesh(g, m); mesh.onBeforeRender = onShadow;
     if (prog === 'shell') mesh.renderOrder = 3.5;   // after the buildings' shadow overlay on the ground, before smoke
     return mesh;
   }
   function freeMesh(mesh) {                // keep the shared template buffers alive
-    const g = mesh.geometry; for (const k of ['position', 'aT', 'aC']) g.deleteAttribute(k); g.setIndex(null);
+    const g = mesh.geometry; for (const k of ['position', 'aT']) g.deleteAttribute(k); g.setIndex(null);
     g.dispose(); mesh.material.dispose();
   }
 
@@ -428,6 +414,29 @@ export default function create(ctx) {
 
   /* ---------- a pack's trees ---------- */
   const CLO = .006, CLA = .004, BLO = .04, BLA = .027;       // gather grid (~450 m) and far blocks (~3 km)
+  // trees per stand close up: nine of the narrow conifers, six of the wide-crowned broadleaf (fewer on phones)
+  const KF = [9, 9, 9, 6].map(k => Math.min(k, KMAX));
+  const h1 = x => { const v = Math.sin(x * 12.9898 + .731) * 43758.5453; return v - Math.floor(v); };
+  const fr = x => x - Math.floor(x);
+  // Child c of stand t, written into out[o..o+7] as iA, iB (positions relative to org): the stand's trees sit on an R2
+  // sequence across its cell, on the local ground slope; the first stays out to the far end, the next three to R1,
+  // the rest to R0 (each fading at its own distance). Singles are child 0 at their own spot.
+  function child(P, t, c, org, out, o) {
+    const W = P.W3, B = P.Bv, x = W[t * 3], y = W[t * 3 + 1], z = W[t * 3 + 2], s = B[t * 4 + 2], code = B[t * 4 + 3], fl = code >> 4;
+    let px = x, py = y, pz = z, h = P.Hk[t], seed = s, fade = 1e4;
+    if (fl) {
+      const cell = fl > 1 ? .08 : .04, ox = (fr(.5 + c * .7548776662 + s) - .5) * cell, oy = (fr(.5 + c * .569840291 + fr(s * 13.7)) - .5) * cell;
+      const l = Math.hypot(x, y, z), ux = x / l, uy = y / l, uz = z / l, el = Math.hypot(ux, uz), ex = uz / el, ez = -ux / el;
+      const nx = uy * ez, ny = uz * ex - ux * ez, nz = -uy * ex, dz = B[t * 4] * ox + B[t * 4 + 1] * oy;     // north = up x east
+      px += ex * ox + nx * oy + ux * dz; py += ny * oy + uy * dz; pz += ez * ox + nz * oy + uz * dz;
+      seed = fr(s * 91.7 + c * .6180339);
+      if (c) { h *= .72 + .48 * h1(seed * 17.3); fade = (c < 2 ? R2 : c < 4 ? R1 : P.fam[t] > 1 ? R0B : R0) * (.7 + .3 * h1(c * 7.13 + s * 31.7)); }
+    }
+    out[o] = px - org.x; out[o + 1] = py - org.y; out[o + 2] = pz - org.z; out[o + 3] = h;
+    out[o + 4] = fade; out[o + 5] = 0; out[o + 6] = seed; out[o + 7] = code;
+    return (px - _cp.x) ** 2 + (py - _cp.y) ** 2 + (pz - _cp.z) ** 2;
+  }
+  const _cp = new V3();
   async function buildTrees(t, bmesh) {
     if (!t || t.v !== 2) return null;
     if (!MAT) {
@@ -438,7 +447,7 @@ export default function create(ctx) {
     const bin = atob(t.data), u8 = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
     const n = t.n, xy = new Uint16Array(u8.buffer, 0, n * 2), kind = u8.subarray(n * 4, n * 5), hb = u8.subarray(n * 5, n * 6);
-    const W3 = new Float64Array(n * 3), Hk = new Float32Array(n), Bv = new Float32Array(n * 4), bucket = new Uint8Array(n), lat = new Float32Array(n), lon = new Float32Array(n);
+    const W3 = new Float64Array(n * 3), Hk = new Float32Array(n), Bv = new Float32Array(n * 4), fam = new Uint8Array(n), lat = new Float32Array(n), lon = new Float32Array(n);
     const p = new V3(); let seed = 9173;
     for (let i = 0; i < n; i++) {
       if (i % 20000 === 19999) await new Promise(r => setTimeout(r, 0));
@@ -448,7 +457,7 @@ export default function create(ctx) {
       Hk[i] = hb[i] * .2 / 1000 * BHS;
       seed = (seed * 16807) % 2147483647;
       Bv[i * 4] = fl ? g.gE : 0; Bv[i * 4 + 1] = fl ? g.gN : 0; Bv[i * 4 + 2] = seed / 2147483647; Bv[i * 4 + 3] = sp + 16 * fl;
-      bucket[i] = FAM(sp) * 2 + (fl ? 0 : 1);
+      fam[i] = FAM(sp);
     }
     // gather grid: tree indices sorted by ~450 m cell
     const lon0 = BB.W, lat0 = BB.S, gx = Math.ceil((BB.E - BB.W) / CLO), gy = Math.ceil((BB.N - BB.S) / CLA);
@@ -458,88 +467,83 @@ export default function create(ctx) {
     for (let c = 0; c < gx * gy; c++) start[c + 1] += start[c];
     const fill = start.slice(0, gx * gy);
     for (let i = 0; i < n; i++) order[fill[cellOf(i)]++] = i;
-    // far blocks: every tree, simple shapes, shown between R1 and R2
+    const P = { n, W3, Hk, Bv, fam, start, order, gx, gy, lon0, lat0, blocks: [], dead: false };
+    // far blocks: every tree (two of each stand), simple shapes, shown between R1 and R2
     const root = new THREE.Group(), blocks = new Map();
     for (let i = 0; i < n; i++) {
       const key = Math.floor((lon[i] - lon0) / BLO) + ',' + Math.floor((lat[i] - lat0) / BLA);
       let b = blocks.get(key); if (!b) blocks.set(key, b = []); b.push(i);
     }
-    const blockList = [];
     for (const list of blocks.values()) {
       await new Promise(r => setTimeout(r, 0));
       const o = new V3(W3[list[0] * 3], W3[list[0] * 3 + 1], W3[list[0] * 3 + 2]), c = new V3();
-      const fams = [[], [], [], []];
-      for (const i of list) fams[bucket[i] >> 1].push(i);
-      let rad = 0; for (const i of list) { c.x += W3[i * 3]; c.y += W3[i * 3 + 1]; c.z += W3[i * 3 + 2]; }
+      for (const i of list) { c.x += W3[i * 3]; c.y += W3[i * 3 + 1]; c.z += W3[i * 3 + 2]; }
       c.multiplyScalar(1 / list.length);
-      for (const i of list) rad = Math.max(rad, Math.hypot(W3[i * 3] - c.x, W3[i * 3 + 1] - c.y, W3[i * 3 + 2] - c.z));
+      let rad = 0; for (const i of list) rad = Math.max(rad, Math.hypot(W3[i * 3] - c.x, W3[i * 3 + 1] - c.y, W3[i * 3 + 2] - c.z));
       const meshes = [];
-      fams.forEach((ids, f) => {
-        if (!ids.length) return;
-        const A = new Float32Array(ids.length * 4), B = new Float32Array(ids.length * 4);
-        ids.forEach((i, k) => { A[k * 4] = W3[i * 3] - o.x; A[k * 4 + 1] = W3[i * 3 + 1] - o.y; A[k * 4 + 2] = W3[i * 3 + 2] - o.z; A[k * 4 + 3] = Hk[i]; B.set(Bv.subarray(i * 4, i * 4 + 4), k * 4); });
-        const iA = new THREE.InstancedBufferAttribute(A, 4), iB = new THREE.InstancedBufferAttribute(B, 4);
+      for (let f = 0; f < 4; f++) {
+        const ids = list.filter(i => fam[i] === f); if (!ids.length) continue;
+        let m = 0; for (const i of ids) m += Bv[i * 4 + 3] >= 16 ? 2 : 1;
+        const A = new Float32Array(m * 4), B = new Float32Array(m * 4), tmp = new Float32Array(8); let k = 0;
+        for (const i of ids) for (let ch = 0; ch < (Bv[i * 4 + 3] >= 16 ? 2 : 1); ch++, k++) { child(P, i, ch, o, tmp, 0); A.set(tmp.subarray(0, 4), k * 4); B.set(tmp.subarray(4), k * 4); }
         const progs = PROG[f], [prog, tk] = progs[progs.length - 1];        // far: the crown only
-        const mesh = makeMesh(TPL[tk][4], iA, iB, prog, 2);
-        mesh.geometry.instanceCount = ids.length; mesh.geometry.boundingSphere.set(c.clone().sub(o), rad + .06);
-        mesh.position.copy(o); mesh.material.uniforms.uDetail.value = 1;
-        root.add(mesh); meshes.push(mesh);
-      });
-      blockList.push({ c, rad, meshes });
+        const mesh = makeMesh(TPL[tk][2], new THREE.InstancedBufferAttribute(A, 4), new THREE.InstancedBufferAttribute(B, 4), prog, 2);
+        mesh.geometry.instanceCount = m; mesh.geometry.boundingSphere.set(c.clone().sub(o), rad + .1);
+        mesh.position.copy(o); root.add(mesh); meshes.push(mesh);
+      }
+      P.blocks.push({ c, rad, meshes });
     }
-    const P = { n, W3, Hk, Bv, bucket, start, order, gx, gy, lon0, lat0, blocks: blockList, dead: false };
     root.userData.trees = P;
-    root.dispose = () => { P.dead = true; for (const b of blockList) for (const m of b.meshes) freeMesh(m); blockList.length = 0; if (dyn.pack === P) hideDyn(); };
+    root.dispose = () => { P.dead = true; for (const b of P.blocks) for (const m of b.meshes) freeMesh(m); P.blocks.length = 0; if (dyn.pack === P) hideDyn(); };
     return root;
   }
 
   /* ---------- the detailed and mid sets, re-gathered around the camera as it moves ---------- */
   const dynRoot = new THREE.Group(); scene.add(dynRoot);
   const dyn = { pack: null, sets: [0, 1].map(lod => ({ lod, at: new V3(1e9, 0, 0), origin: new V3(), buckets: [] })) };
-  function bucketFor(set, bi) {
-    let b = set.buckets[bi];
-    if (!b) b = set.buckets[bi] = { cap: 0, n: 0, A: null, B: null, iA: null, iB: null, meshes: [] };
+  function grow(set, f, need) {             // (re)allocate a family's buffers and its meshes
+    let b = set.buckets[f];
+    if (!b) b = set.buckets[f] = { cap: 0, n: 0, A: null, iA: null, iB: null, meshes: [] };
+    const cap = Math.max(512, need * 1.5 | 0), A = new Float32Array(cap * 8);
+    if (b.A) A.set(b.A.subarray(0, b.n * 8));
+    for (const m of b.meshes) { dynRoot.remove(m); freeMesh(m); }
+    b.A = A; b.cap = cap;
+    const ib = new THREE.InstancedInterleavedBuffer(A, 8).setUsage(THREE.DynamicDrawUsage);
+    b.ib = ib; b.iA = new THREE.InterleavedBufferAttribute(ib, 4, 0); b.iB = new THREE.InterleavedBufferAttribute(ib, 4, 4);
+    b.meshes = PROG[f].map(([prog, tk]) => { const m = makeMesh(TPL[tk][set.lod], b.iA, b.iB, prog, set.lod); m.visible = false; dynRoot.add(m); return m; });
     return b;
   }
-  function grow(set, bi, need) {
-    const b = bucketFor(set, bi), cap = Math.max(256, need * 1.5 | 0), f = bi >> 1, single = bi & 1;
-    const A = new Float32Array(cap * 4), B = new Float32Array(cap * 4);
-    if (b.A) { A.set(b.A.subarray(0, b.n * 4)); B.set(b.B.subarray(0, b.n * 4)); }
-    for (const m of b.meshes) { dynRoot.remove(m); freeMesh(m); }
-    b.A = A; b.B = B; b.cap = cap;
-    b.iA = new THREE.InstancedBufferAttribute(A, 4).setUsage(THREE.DynamicDrawUsage); b.iB = new THREE.InstancedBufferAttribute(B, 4).setUsage(THREE.DynamicDrawUsage);
-    b.meshes = PROG[f].map(([prog, tk]) => { const m = makeMesh(TPL[tk][set.lod * 2 + single], b.iA, b.iB, prog, set.lod); m.visible = false; dynRoot.add(m); return m; });
-  }
   const _c = new V3();
-  function gather(P, set, rIn, rOut) {
-    const cp = camera.position, o = set.origin.copy(ctx.cam.target);
+  // every tree (stand children included) within [rIn, rOut) of the camera that could show before the next gather
+  function gather(P, set, rIn, rOut, kMax, margin) {
+    const cp = _cp.copy(camera.position), o = set.origin.copy(ctx.cam.target);
     set.at.copy(cp);
     for (const b of set.buckets) if (b) b.n = 0;
     _c.copy(cp).normalize();
-    const la = Math.asin(_c.y) / D2R, lo = Math.atan2(_c.x, _c.z) / D2R, dla = rOut / 111.19, dlo = rOut / (111.19 * Math.cos(la * D2R));
+    const la = Math.asin(_c.y) / D2R, lo = Math.atan2(_c.x, _c.z) / D2R, ro = rOut + .06, dla = ro / 111.19, dlo = ro / (111.19 * Math.cos(la * D2R));
     const i0 = clamp(Math.floor((lo - dlo - P.lon0) / CLO), 0, P.gx - 1), i1 = clamp(Math.floor((lo + dlo - P.lon0) / CLO), 0, P.gx - 1);
     const j0 = clamp(Math.floor((la - dla - P.lat0) / CLA), 0, P.gy - 1), j1 = clamp(Math.floor((la + dla - P.lat0) / CLA), 0, P.gy - 1);
-    const ri = rIn > 0 ? rIn * rIn : -1, ro = rOut * rOut, W = P.W3, cx = cp.x, cy = cp.y, cz = cp.z;
-    if (rOut > 0 && cp.length() - 6371 < rOut + 3) for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const ri = rIn - .06, W = P.W3, ri2 = rIn > 0 ? rIn * rIn : -1, ro2 = rOut * rOut;
+    if (cp.length() - 6371 < rOut + 3) for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const c = j * P.gx + i;
       for (let k = P.start[c], e = P.start[c + 1]; k < e; k++) {
-        const t = P.order[k], dx = W[t * 3] - cx, dy = W[t * 3 + 1] - cy, dz = W[t * 3 + 2] - cz, d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 >= ro || d2 < ri) continue;
-        const bi = P.bucket[t]; let b = set.buckets[bi];
-        if (!b || b.n >= b.cap) { grow(set, bi, (b ? b.n : 0) + 1); b = set.buckets[bi]; }
-        const q = b.n++ * 4;
-        b.A[q] = W[t * 3] - o.x; b.A[q + 1] = W[t * 3 + 1] - o.y; b.A[q + 2] = W[t * 3 + 2] - o.z; b.A[q + 3] = P.Hk[t];
-        b.B[q] = P.Bv[t * 4]; b.B[q + 1] = P.Bv[t * 4 + 1]; b.B[q + 2] = P.Bv[t * 4 + 2]; b.B[q + 3] = P.Bv[t * 4 + 3];
+        const t = P.order[k], dx = W[t * 3] - cp.x, dy = W[t * 3 + 1] - cp.y, dz = W[t * 3 + 2] - cp.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d >= ro || d < ri) continue;
+        const f = P.fam[t], K = P.Bv[t * 4 + 3] >= 16 ? Math.min(kMax, KF[f]) : 1;
+        let b = set.buckets[f];
+        for (let ch = 0; ch < K; ch++) {
+          if (!b || b.n >= b.cap) b = grow(set, f, (b ? b.n : 0) + K);
+          const q = b.n * 8, d2 = child(P, t, ch, o, b.A, q);
+          if (d2 >= ro2 || d2 < ri2 || Math.sqrt(d2) > b.A[q + 4] + margin) continue;
+          b.n++;
+        }
       }
     }
     _c.copy(cp).sub(o);
     for (const b of set.buckets) {
       if (!b) continue;
-      if (b.n) { b.iA.clearUpdateRanges(); b.iB.clearUpdateRanges(); b.iA.addUpdateRange(0, b.n * 4); b.iB.addUpdateRange(0, b.n * 4); b.iA.needsUpdate = b.iB.needsUpdate = true; }
-      for (const m of b.meshes) {
-        m.visible = b.n > 0; m.geometry.instanceCount = b.n; m.position.copy(o);
-        m.geometry.boundingSphere.set(_c, rOut + .06);
-      }
+      if (b.n) { b.ib.clearUpdateRanges(); b.ib.addUpdateRange(0, b.n * 8); b.ib.needsUpdate = true; }
+      for (const m of b.meshes) { m.visible = b.n > 0; m.geometry.instanceCount = b.n; m.position.copy(o); m.geometry.boundingSphere.set(_c, rOut + .06); }
     }
   }
   function hideDyn() { for (const s of dyn.sets) { s.at.set(1e9, 0, 0); for (const b of s.buckets) if (b) for (const m of b.meshes) m.visible = false; } dyn.pack = null; }
@@ -558,8 +562,8 @@ export default function create(ctx) {
       for (const m of b.meshes) m.visible = m.material.uniforms.uLod === lodU[3] ? visB : vis;
     }
     const s0 = dyn.sets[0], s1 = dyn.sets[1];
-    if (s0.at.distanceTo(cp) > M0 * .9) gather(P, s0, -1, R0 + B0 / 2 + M0);
-    if (s1.at.distanceTo(cp) > M1 * .9) gather(P, s1, R0 - B0 / 2 - M1, R1 + B1 / 2 + M1);
+    if (s0.at.distanceTo(cp) > M0 * .9) gather(P, s0, -1, R0 + B0 / 2 + M0, 9, M0);
+    if (s1.at.distanceTo(cp) > M1 * .9) gather(P, s1, R0B - B0 / 2 - M1, R1 + B1 / 2 + M1, 4, M1);
     // the buildings' shadow map, while it is on
     const bm = ctx.state.packMesh, bu = bm && bm.material && bm.material.uniforms;
     if (SHADOWS && bu && bu.uShadowOn && bm.userData.chunks && bm.userData.chunks.length) {

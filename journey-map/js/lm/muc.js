@@ -3,7 +3,7 @@
 const BRICK = { m: 0, c: '#76453a', t: '#b5ab9c', f: 1 | 2 | 32, seed: .31 };       // nave: plinth, eaves frieze, eaves shade
 const BRICK_T = { m: 0, c: '#734337', t: '#b5ab9c', f: 1, seed: .53 };              // towers
 const BRICK_P = { m: 0, c: '#734337', t: '#b5ab9c', f: 0, seed: .53 };              // strips and bands
-const TILE = { m: 6, c: '#83402e', snow: .62, seed: .2 };
+const TILE = { m: 6, c: '#7b3f30', snow: .62, seed: .2 };
 const COPPER = { m: 4, c: '#5c8774', snow: .75, seed: .4 };
 const STONE = { m: 11, c: '#b9b0a2' };
 const DIAL = { m: 12, c: '#29303b' };
@@ -110,7 +110,7 @@ export default {
       K.cornice(oct, Z8 - .6, .8, .55, BRICK_P);
       // the welsche Haube: a bell flare off the cornice, a tall rounded body drawn in to the lantern's neck
       const hz = Z8 + .2, Rh = R8 * .97;
-      const hp = [[Rh, 0, 1], [Rh * 1.045, .55], [Rh * 1.04, 1.4], [Rh * 1.0, 2.8], [Rh * .91, 4.8], [Rh * .77, 6.9], [Rh * .58, 8.9], [Rh * .39, 10.7], [Rh * .25, 12.1], [Rh * .2, 13.2], [Rh * .19, 14.2]];
+      const hp = [[Rh, 0, 1], [Rh * 1.01, .45], [Rh * 1.06, 1.7], [Rh * 1.075, 3.1], [Rh * 1.04, 4.7], [Rh * .93, 6.5], [Rh * .75, 8.4], [Rh * .53, 10.1], [Rh * .33, 11.6], [Rh * .22, 12.9], [Rh * .19, 14.2]];   // full in the shoulder, drawn in to a neck
       K.lathe(cx, cy, hz, hp, COPPER, { seg: K.seg(28) });
       K.detail(() => {                                   // eight ribs down the Haube from the lantern to the cornice
         for (let k = 0; k < 8; k++) {

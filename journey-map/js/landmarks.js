@@ -951,7 +951,7 @@ export default function create(ctx) {
         const mesh = new THREE.Mesh(g, material(L, far));
         mesh.position.copy(L.origin); mesh.quaternion.setFromRotationMatrix(basis); mesh.scale.setScalar(.001);
         mesh.updateMatrixWorld(); mesh.userData.far = far; mesh.frustumCulled = true;
-        if (ctx.shadow) { mesh.layers.enable(ctx.shadow.layer); ctx.shadow.meshes.add(mesh); }
+        if (ctx.shadow) ctx.shadow.meshes.add(mesh);        // (it joins the shadow layer once it has faded in)
         ctx.scene.add(mesh); L.meshes.push(mesh);
       }
       L.radius = Math.max(...L.meshes.map(m => m.geometry.boundingSphere.radius)) * .001;
@@ -964,7 +964,7 @@ export default function create(ctx) {
   }
   function drop(L) {
     for (const m of L.meshes || []) { ctx.scene.remove(m); m.geometry.dispose(); m.material.dispose(); if (ctx.shadow) ctx.shadow.meshes.delete(m); }
-    L.meshes = null; L.st = 0;
+    L.meshes = null; L.st = 0; L.casting = false;
   }
   const camL = new V3();
   let last = performance.now();
@@ -981,6 +981,7 @@ export default function create(ctx) {
         if (dk > DROP) { drop(L); continue; }
         L.uCamL.value.copy(camL).sub(L.origin);
         L.uFade.value = Math.min(1, L.uFade.value + rdt * 1.5);
+        if (ctx.shadow && L.uFade.value > .5 && !L.casting) { L.casting = true; for (const m of L.meshes) m.layers.enable(ctx.shadow.layer); ctx.shadow.invalidate(); }
         const dd = camL.distanceTo(L.origin);
         for (const m of L.meshes) m.visible = !ctx.city && dd < m.userData.far + L.radius;
       }

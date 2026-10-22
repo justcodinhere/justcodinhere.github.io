@@ -959,7 +959,7 @@ export default function create(ctx) {
   // other features' meshes (landmarks) receive and cast the same shadow: they share these uniforms, and their uShadowM is
   // set here whenever the map is re-rendered
   const shadowU = { uShadow: { value: SHADOWS ? shadowTex() : null }, uShadowOn: { value: 0 }, uShadowTexel: { value: 1 } }, shadowMeshes = new Set();
-  ctx.shadow = { glsl: SHADOW_GLSL, layer: SHADOW_LAYER, uniforms: shadowU, matrix: sM, meshes: shadowMeshes };
+  ctx.shadow = { glsl: SHADOW_GLSL, layer: SHADOW_LAYER, uniforms: shadowU, matrix: sM, meshes: shadowMeshes, invalidate: () => { sMesh = null; } };
   const camL = new V3();
   function update(dt) {
     const mesh = ctx.state.packMesh, mine = mesh && mesh.userData.chunks;

@@ -1,7 +1,7 @@
 // Nuremberg landmarks: the Kaiserburg on its sandstone ridge, St. Lorenz and the Frauenkirche on the Hauptmarkt.
 // Builders receive the kit K (js/landmarks.js); local metres round each landmark's footprints.json origin.
-const SS = { m: 1, c: '#9a5c48', t: '#a86b55', f: 1 | 32, seed: .37 };          // red Burgsandstein ashlar
-const SS2 = { m: 1, c: '#94584a', t: '#a86b55', f: 0, seed: .71 };
+const SS = { m: 1, c: '#8e6151', t: '#a3705d', f: 1 | 32, seed: .37 };          // red Burgsandstein ashlar
+const SS2 = { m: 1, c: '#885c4e', t: '#a3705d', f: 0, seed: .71 };
 const TILE = { m: 6, c: '#8e4630', snow: .85, seed: .3 };
 const SLATE = { m: 5, c: '#4d535b', snow: .8 };
 const CU = { m: 4, c: '#5e8a78', snow: .6 };
@@ -14,7 +14,7 @@ function parts(K, wall, roof, o = {}) {
   const P = K.parts.filter(p => !p.ctx && p.part), groups = new Map();
   for (const p of P) { const k = p.h || 0; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(p); }
   for (const p of P) {
-    if (p.area < 1.2) continue;
+    if (p.area < 1.2 || o.skip && o.skip(p)) continue;
     const g = groups.get(p.h || 0), c = [g.reduce((t, q) => t + q.c[0], 0) / g.length, g.reduce((t, q) => t + q.c[1], 0) / g.length];
     const small = p.area < 12 && (p.h || 0) - (p.minh || 0) > 3;
     K.footprint(p, { wall: small ? SS2 : wall, roof: p.roofMat === 'copper' ? CU : roof, highToward: c, over: p.area < 30 ? .15 : .4, win: o.win ? o.win(p) : null, ...(o.each ? o.each(p) : {}) });
@@ -50,8 +50,14 @@ export default {
   // St. Lorenz: the Gothic hall church in red sandstone; twin west towers with octagonal tops, little gables round the
   // base of their copper spires; a hall choir under one steep roof.
   stLorenz(K) {
-    const { W } = K;
+    const { W } = K, choir = K.parts.filter(p => p.part && p.h === 47.5 && p.area > 30);
+    // the hall choir (1439-77) under one great hipped roof, drawn whole rather than as its mapped roof segments
+    const ring = K.hull(choir.flatMap(p => p.ring)), west = ring.reduce((b, p, j) => { const q = ring[(j + 1) % ring.length], x = (p[0] + q[0]) / 2; return x < b[0] ? [x, j] : b; }, [1e9, 0])[1];
+    const cp = K.hipPlanes(ring, 25, 22.5 / 16, { gable: [west] });
+    K.roofPlanes(ring, cp, TILE, { over: .5 });
+    K.roofWalls(ring, cp, -2, SS, { E: 25, win: (j, len) => len > 4 && j !== west ? { t: W.LANCET, w: 2.4, y0: 4, y1: 21, P: 6.2, m: 1, lights: 3 } : null });
     parts(K, SS, TILE, {
+      skip: p => choir.includes(p),
       win: p => p.id === 'P3890' ? (j, len) => westward(p, j) ? { t: W.ROSE, w: 7.6, y0: 17, y1: 24.6, n: 1 } : null      // the rose between the towers
         : p.area > 150 && (p.h || 0) < 40 ? (i, len) => len > 5 ? { t: W.LANCET, w: 2.2, y0: 3, y1: Math.max(6, (p.h || 15) - (p.rh || 0) - 2), P: 5.6, m: 1, lights: 2 } : null
         : p.area > 60 && (p.h || 0) >= 45 && (p.h || 0) <= 50 ? (i, len) => ({ t: W.BELFRY, w: 1.6, y0: 40, y1: 47, n: 1 }) : null,
