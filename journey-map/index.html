@@ -629,207 +629,6 @@ function buildTerrain() {
     .addScaledVector(f.north, Math.cos(az) * Math.cos(el)).addScaledVector(f.up, Math.sin(el)).normalize();
 }
 
-/* ---------- snowy conifers, chunked so whole patches drop out of view ---------- */
-const TREE_GREEN = new THREE.Color(0x2b4a32);
-function treeGeometry() {
-  const parts = [[1.25, .9, .2], [.9, .75, .7]].map(([r, h, y]) => { const g = new THREE.ConeGeometry(r * .38, h, 7, 1, true); g.translate(0, y + h / 2, 0); return g.toNonIndexed(); });
-  const pos = [], nor = [], col = [], snow = new THREE.Color(0xdfe5ec), c = new THREE.Color();
-  for (const g of parts) {
-    const P = g.attributes.position.array, Nn = g.attributes.normal.array;
-    for (let k = 0; k < P.length; k += 3) {
-      pos.push(P[k], P[k + 1], P[k + 2]); nor.push(Nn[k], Nn[k + 1], Nn[k + 2]);
-      c.copy(TREE_GREEN).lerp(snow, clamp((Nn[k + 1] - .35) * 1.3, 0, .45) * (.35 + .65 * (P[k + 1] > 1.2)));
-      col.push(c.r, c.g, c.b);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  return g;
-}
-const treeGeo = treeGeometry();
-const treeMats = { winter: new THREE.MeshLambertMaterial({ vertexColors: true }), summer: new THREE.MeshLambertMaterial({ color: 0x33573a }) };
-async function buildTrees(t) {
-  const bin = atob(t.data), b = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
-  const n = t.n, xy = new Uint16Array(b.buffer, 0, n * 2), sz = new Uint8Array(b.buffer, n * 4, n);
-  const take = phone() ? Math.floor(n * .45) : n, blocks = new Map();
-  for (let i = 0; i < take; i++) {
-    const lon = t.ox + xy[i * 2] * 4 / t.kx, lat = t.oy + xy[i * 2 + 1] * 4 / t.ky;
-    const key = Math.floor((lon - BB.W) / .14) + ',' + Math.floor((lat - BB.S) / .093);
-    if (!blocks.has(key)) blocks.set(key, []);
-    blocks.get(key).push([lat, lon, sz[i] / 255]);
-  }
-  const group = new THREE.Group(), m = new THREE.Matrix4(), q = new THREE.Quaternion(), Y = new V3(0, 1, 0), p = new V3(), sc = new V3();
-  for (const list of blocks.values()) {
-    await new Promise(r => setTimeout(r, 0));
-    const c = ground(list[0][0], list[0][1]);
-    const mesh = new THREE.InstancedMesh(treeGeo, treeMats.winter, list.length);
-    list.forEach(([lat, lon, k], i) => {
-      llv(lat, lon, meshKm(lat, lon) - .004, p);
-      q.setFromUnitVectors(Y, p.clone().normalize());
-      const h = (.022 + .014 * k) * BHS; sc.set(h, h, h);
-      m.compose(p.sub(c), q, sc); mesh.setMatrixAt(i, m);
-    });
-    mesh.position.copy(c); mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere();
-    group.add(mesh);
-  }
-  return group;
-}
-function updateTrees(g) {
-  if (!g) return;
-  const mat = state.winter ? treeMats.winter : treeMats.summer;
-  for (const mesh of g.children) { mesh.visible = !city && camera.position.distanceTo(mesh.position) < 45; mesh.material = mat; }
-}
-
-/* ---------- landmark models (built in code; stand-ins for Blender .glb models) ---------- */
-const LMAT = {};
-const roofMats = [];
-function lmat(name, color, o = {}) {
-  if (!LMAT[name]) {
-    const roof = o.roof; delete o.roof;
-    const c = new THREE.Color(color), hsl = {}; c.getHSL(hsl); c.setHSL(hsl.h, hsl.s * .6, hsl.l * .88);
-    LMAT[name] = new THREE.MeshLambertMaterial({ color: c, ...(o.emissive ? { emissive: o.emissive } : {}) });
-    if (roof) roofMats.push({ m: LMAT[name], base: LMAT[name].color.clone() });
-  }
-  return LMAT[name];
-}
-const K = {
-  box(g, w, h, d, m, x = 0, y = 0, z = 0) { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y + h / 2, z); g.add(o); return o; },
-  gable(g, len, wid, h, m, x = 0, y = 0, z = 0, alongZ = false) {   // ridge runs along x (or z)
-    const s = new THREE.Shape([new THREE.Vector2(-wid / 2, 0), new THREE.Vector2(wid / 2, 0), new THREE.Vector2(0, h)]);
-    const geo = new THREE.ExtrudeGeometry(s, { depth: len, bevelEnabled: false }); geo.translate(0, 0, -len / 2);
-    if (!alongZ) geo.rotateY(Math.PI / 2);
-    const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); g.add(o); return o;
-  },
-  cyl(g, r, h, m, x = 0, y = 0, z = 0, seg = 16, r2) { const o = new THREE.Mesh(new THREE.CylinderGeometry(r2 ?? r, r, h, seg), m); o.position.set(x, y + h / 2, z); g.add(o); return o; },
-  cone(g, r, h, m, x = 0, y = 0, z = 0, seg = 16) { const o = new THREE.Mesh(new THREE.ConeGeometry(r, h, seg), m); o.position.set(x, y + h / 2, z); g.add(o); return o; },
-  onion(g, r, h, m, x = 0, y = 0, z = 0) {
-    const pts = [[0, 0], [r * .8, .05], [r, .25], [r * .85, .5], [r * .35, .72], [r * .12, .85], [r * .08, 1]].map(([a, b]) => new THREE.Vector2(a, b * h));
-    const o = new THREE.Mesh(new THREE.LatheGeometry(pts, 20), m); o.position.set(x, y, z); g.add(o); return o;
-  },
-  dome(g, r, m, x = 0, y = 0, z = 0) { const o = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), m); o.position.set(x, y, z); g.add(o); return o; },
-};
-// Real-world metres; x = east, y = up, z = south before the heading turn. Walls run 30 m below ground so slopes never show a gap.
-const LM_BUILD = {
-  frauenkircheMuc(g) {
-    const brick = lmat('brick', 0x9a5840), roof = lmat('tileRed', 0x7c3a2c, { roof: 1 }), cu = lmat('copper', 0x5d8c78, { roof: 1 });
-    K.box(g, 92, 61, 40, brick, 14, -30); K.gable(g, 92, 40, 30, roof, 14, 31);
-    for (const z of [-11, 11]) {
-      K.box(g, 17, 102, 17, brick, -38, -30, z);
-      K.cyl(g, 8.3, 10, brick, -38, 72, z, 8);
-      K.onion(g, 9.2, 17, cu, -38, 82, z);
-    }
-  },
-  rathaus(g) {
-    const st = lmat('greyStone', 0x8b8373), sl = lmat('slate', 0x4b5157, { roof: 1 });
-    K.box(g, 98, 54, 34, st, 0, -30); K.gable(g, 98, 34, 15, sl, 0, 24);
-    K.box(g, 13, 98, 13, st, 0, -30, 14); K.cone(g, 7.5, 17, sl, 0, 68, 14, 4);
-  },
-  alterPeter(g) {
-    const w = lmat('whitewash', 0xddd5c6), roof = lmat('tileRed', 0x7c3a2c, { roof: 1 }), cu = lmat('copper', 0x5d8c78, { roof: 1 });
-    K.box(g, 52, 50, 22, w, 10, -30); K.gable(g, 52, 22, 14, roof, 10, 20);
-    K.box(g, 12, 98, 12, w, -22, -30); K.cyl(g, 5, 10, cu, -22, 68, 0, 8, 3.2);
-    K.cyl(g, 3.2, 7, w, -22, 78, 0, 8); K.onion(g, 4, 8, cu, -22, 85, 0);
-  },
-  stMichael(g) {
-    const w = lmat('sandstone', 0xd6ccb8), roof = lmat('tileRed', 0x7c3a2c, { roof: 1 });
-    K.box(g, 20, 60, 78, w, 0, -30); K.gable(g, 78, 20, 18, roof, 0, 30, 0, true);
-    K.box(g, 24, 70, 4, w, 0, -30, -40);
-  },
-  domIbk(g) {
-    const st = lmat('ochreStone', 0xe0cba6), cu = lmat('copper', 0x5d8c78, { roof: 1 });
-    K.box(g, 62, 54, 24, st, 8, -30); K.gable(g, 62, 24, 10, cu, 8, 24);
-    for (const z of [-10, 10]) { K.box(g, 9, 76, 9, st, -26, -30, z); K.onion(g, 5.4, 12, cu, -26, 46, z); }
-    K.cyl(g, 9, 12, st, 14, 24); K.dome(g, 9, cu, 14, 36); K.cyl(g, 2, 6, st, 14, 44); K.onion(g, 2.4, 5, cu, 14, 50);
-  },
-  hofkirche(g) {
-    const w = lmat('whitewash', 0xddd5c6), sl = lmat('slate', 0x4b5157, { roof: 1 }), cu = lmat('copper', 0x5d8c78, { roof: 1 });
-    K.box(g, 22, 50, 50, w, 0, -30); K.gable(g, 50, 22, 18, sl, 0, 20, 0, true);
-    K.box(g, 8, 76, 8, w, 14, -30, -10); K.onion(g, 5, 12, cu, 14, 46, -10);
-  },
-  goldenesDachl(g) {
-    const w = lmat('whitewash', 0xddd5c6), gold = lmat('gold', 0xd9a52b, { metalness: .9, roughness: .3, emissive: 0x3a2a05 });
-    K.box(g, 16, 52, 14, w, 0, -30); K.cone(g, 9, 8, gold, 0, 22, 4, 4);
-  },
-  bergisel(g) {
-    const c = lmat('concrete', 0xb9bcbf), glass = lmat('glass', 0x2f3a46, { metalness: .6, roughness: .2 });
-    K.box(g, 7, 82, 7, c, 0, -30); K.box(g, 30, 9, 12, glass, -4, 50);
-    const ramp = new THREE.Mesh(new THREE.BoxGeometry(4, 2, 105), c); ramp.position.set(0, 26, -52); ramp.rotation.x = -.62; g.add(ramp);
-  },
-  neuschwanstein(g) {
-    const lime = lmat('limestone', 0xd9d5cc), sl = lmat('slateBlue', 0x56616e, { roof: 1 }), ochre = lmat('ochreBrick', 0xc98f62);
-    K.box(g, 150, 60, 40, lmat('rock', 0x8a8478), 10, -60, 0);
-    K.box(g, 62, 30, 18, lime, -18, 0, 0); K.gable(g, 62, 18, 14, sl, -18, 30);
-    for (const z of [-9, 9]) { K.cyl(g, 3.4, 42, lime, -50, 0, z); K.cone(g, 4.2, 12, sl, -50, 42, z); }
-    K.cyl(g, 4.2, 56, lime, -6, 0, -12); K.cone(g, 5, 14, sl, -6, 56, -12);
-    K.box(g, 10, 44, 10, lime, 26, 0, 6); K.box(g, 12, 3, 12, lime, 26, 44, 6);
-    K.box(g, 40, 9, 5, lime, 36, 0, -14);
-    K.box(g, 30, 18, 14, ochre, 60, 0, 0); K.gable(g, 30, 14, 8, sl, 60, 18);
-    for (const z of [-8, 8]) { K.cyl(g, 3, 24, ochre, 74, 0, z); K.cone(g, 3.6, 8, sl, 74, 24, z); }
-  },
-  hohenschwangau(g) {
-    const y = lmat('yellow', 0xe6c36a), sl = lmat('slateBlue', 0x56616e, { roof: 1 });
-    K.box(g, 60, 40, 30, lmat('rock', 0x8a8478), 0, -40, 0);
-    K.box(g, 42, 16, 18, y, 0, 0, 0); K.gable(g, 42, 18, 6, sl, 0, 16);
-    for (const [x, z] of [[-22, -9], [22, 9], [6, -12]]) K.cyl(g, 4.2, 24, y, x, 0, z);
-  },
-  kufstein(g) {
-    const st = lmat('fortStone', 0xc2b8a4), roof = lmat('tileRed', 0x7c3a2c, { roof: 1 });
-    K.cyl(g, 60, 80, lmat('rock', 0x8a8478), 0, -70, 0, 20, 52);
-    K.cyl(g, 45, 12, st, 0, 0, 0, 20);
-    K.cyl(g, 12, 34, st, 18, 0, 6, 20); K.cone(g, 14, 10, roof, 18, 34, 6, 20);
-    K.box(g, 30, 16, 16, st, -18, 0, -6); K.gable(g, 30, 16, 7, roof, -18, 16, -6);
-  },
-  kaiserburg(g) {
-    const ss = lmat('redSandstone', 0xae6a54), roof = lmat('tileRed', 0x7c3a2c, { roof: 1 });
-    K.box(g, 120, 50, 40, lmat('rockRed', 0x9a6a58), 10, -45, 0);
-    K.box(g, 48, 18, 16, ss, -30, 0, -6); K.gable(g, 48, 16, 12, roof, -30, 18, -6);
-    K.cyl(g, 6.5, 30, ss, 10, 0, 6, 16); K.cone(g, 7, 12, roof, 10, 30, 6, 16);
-    K.box(g, 10, 24, 10, ss, 40, 0, 0); K.gable(g, 10, 10, 6, roof, 40, 24);
-    K.box(g, 9, 22, 9, ss, 62, 0, -4); K.cone(g, 7, 9, roof, 62, 22, -4, 4);
-  },
-  stLorenz(g) {
-    const ss = lmat('redSandstone', 0xae6a54), sl = lmat('slate', 0x4b5157, { roof: 1 });
-    K.box(g, 90, 52, 28, ss, 12, -30); K.gable(g, 90, 28, 22, sl, 12, 22);
-    for (const z of [-9, 9]) { K.box(g, 9, 85, 9, ss, -36, -30, z); K.cyl(g, 4.5, 8, ss, -36, 55, z, 8); K.cone(g, 4.6, 22, sl, -36, 63, z, 8); }
-  },
-  frauenkircheNue(g) {
-    const ss = lmat('redSandstone', 0xae6a54), sl = lmat('slate', 0x4b5157, { roof: 1 });
-    K.box(g, 30, 46, 22, ss, 0, -30); K.gable(g, 30, 22, 16, sl, 0, 16);
-    K.box(g, 4, 44, 22, ss, -16, -30); K.cone(g, 2.2, 10, sl, -16, 14, 0, 6);
-  },
-  wieskirche(g) {
-    const w = lmat('whitewash', 0xddd5c6), sl = lmat('slate', 0x4b5157, { roof: 1 }), cu = lmat('copper', 0x5d8c78, { roof: 1 });
-    K.cyl(g, 18, 46, w, 0, -30, 0, 24); K.cone(g, 19, 10, sl, 0, 16, 0, 24);
-    K.box(g, 14, 48, 30, w, 26, -30); K.gable(g, 30, 14, 7, sl, 26, 18, 0, true);
-    K.box(g, 6, 70, 6, w, 42, -30); K.onion(g, 4, 9, cu, 42, 40);
-  },
-};
-const LANDMARKS = [
-  { b: 'frauenkircheMuc', lat: 48.13862, lon: 11.57355, hd: 0 }, { b: 'rathaus', lat: 48.13760, lon: 11.57590, hd: 0 },
-  { b: 'alterPeter', lat: 48.13645, lon: 11.57565, hd: 0 }, { b: 'stMichael', lat: 48.13880, lon: 11.57060, hd: 0 },
-  { b: 'domIbk', lat: 47.26920, lon: 11.39380, hd: -8 }, { b: 'hofkirche', lat: 47.26830, lon: 11.39560, hd: 0 },
-  { b: 'goldenesDachl', lat: 47.26860, lon: 11.39330, hd: 0, k: 1.8 }, { b: 'bergisel', lat: 47.24900, lon: 11.39950, hd: 0, k: 1.8 },
-  { b: 'neuschwanstein', lat: 47.55760, lon: 10.74980, hd: -20, k: 2.2 }, { b: 'hohenschwangau', lat: 47.55530, lon: 10.73640, hd: 10, k: 2 },
-  { b: 'kufstein', lat: 47.58360, lon: 12.17060, hd: 0, k: 2 }, { b: 'kaiserburg', lat: 49.45780, lon: 11.07580, hd: 0, k: 1.6 },
-  { b: 'stLorenz', lat: 49.45090, lon: 11.07860, hd: 0 }, { b: 'frauenkircheNue', lat: 49.45450, lon: 11.07790, hd: 0 },
-  { b: 'wieskirche', lat: 47.68110, lon: 10.90020, hd: 0, k: 2 },
-];
-const landmarkGroup = new THREE.Group(); scene.add(landmarkGroup);
-function buildLandmarks() {
-  const m = new THREE.Matrix4();
-  for (const L of LANDMARKS) {
-    const g = new THREE.Group(); LM_BUILD[L.b](g);
-    const p = ground(L.lat, L.lon), f = enu(p);
-    m.makeBasis(f.east, f.up, f.north.clone().negate());
-    g.quaternion.setFromRotationMatrix(m); g.rotateY(-L.hd * D2R);
-    const k = (L.k || 1.3) * .001;
-    g.position.copy(p); g.scale.set(k, k * BHS, k);
-    landmarkGroup.add(g);
-  }
-}
-
 /* ---------- detail packs: 10 m imagery + buildings per leg, swapped behind the clouds ---------- */
 const packs = {}; let activePack = null;
 async function loadPack(name) {
@@ -844,7 +643,8 @@ async function loadPack(name) {
   let mesh;
   try { mesh = features.buildings ? await features.buildings.buildBuildings(buf.buffer, meta) : null; } catch (e) { console.error('buildings failed', e); }
   if (!mesh) { mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.ShaderMaterial({ uniforms: { uFade: { value: 0 } }, visible: false })); }
-  const trees = meta.trees ? await buildTrees(meta.trees) : null;
+  let trees = null;                     // js/trees.js: species by place, three levels of detail
+  try { trees = meta.trees && features.trees ? await features.trees.buildTrees(meta.trees, mesh) : null; } catch (e) { console.error('trees failed', e); }
   return { atlas, idx, relief, mid, rows: atlas.image.height / 128, midRows: mid.image.height / 64, mesh, trees };
 }
 async function usePack(name) {
@@ -852,7 +652,7 @@ async function usePack(name) {
   activePack = name;
   for (const [k, p] of Object.entries(packs)) {          // keep GPU memory low: drop other packs
     if (k === name) continue;
-    p.then(d => { d.atlas.dispose(); d.idx.dispose(); d.relief.dispose(); d.mid.dispose(); d.mesh.geometry.dispose(); scene.remove(d.mesh); if (d.trees) { d.trees.children.forEach(t => t.dispose()); scene.remove(d.trees); } }).catch(() => {});
+    p.then(d => { d.atlas.dispose(); d.idx.dispose(); d.relief.dispose(); d.mid.dispose(); d.mesh.geometry.dispose(); scene.remove(d.mesh); if (d.trees) { d.trees.dispose(); scene.remove(d.trees); } }).catch(() => {});
     delete packs[k];
   }
   packs[name] = packs[name] || loadPack(name);
@@ -1520,7 +1320,7 @@ const POI = {
   rosenheim: { lat: 47.8561, lon: 12.1289, t: 'Rosenheim', x: 'The Mangfall meets the Inn here. From Rosenheim the line follows the Inn south into the Alps.' },
   wendelstein: { lat: 47.7036, lon: 12.0122, t: 'Wendelstein · 1,838 m', x: 'The peak with the observatory on top. Its cog railway, opened in 1912, is the oldest high-mountain railway in Germany.' },
   border: { lat: 47.6080, lon: 12.1800, t: 'Into Austria', x: 'Just past Kiefersfelden the train crosses from Bavaria into Tyrol. Welcome to Austria.' },
-  kufstein: { major: 1, lat: 47.5836, lon: 12.1706, t: 'Kufstein Fortress', x: 'First recorded in 1205. The Heroes’ Organ in its tower, the world’s largest open-air organ, plays every day at noon.' },
+  kufstein: { major: 1, lat: 47.5818, lon: 12.1691, t: 'Kufstein Fortress', x: 'First recorded in 1205. The Heroes’ Organ in its tower, the world’s largest open-air organ, plays every day at noon.' },
   kaiser: { lat: 47.5650, lon: 12.3000, t: 'Wilder Kaiser', x: 'The jagged limestone wall east of the valley, topping out at 2,344 m on the Ellmauer Halt.' },
   rattenberg: { major: 1, lat: 47.4383, lon: 11.8933, t: 'Rattenberg', x: 'Austria’s smallest town, about 400 people, known for glass-blowing. The hill behind it keeps parts of town in shadow much of the winter.' },
   schwaz: { lat: 47.3500, lon: 11.7083, t: 'Schwaz', x: 'In the 1500s one of Europe’s largest silver-mining centres. Its silver bankrolled the Fugger bankers and the Habsburg emperors.' },
@@ -2162,7 +1962,7 @@ function resize() {
 }
 addEventListener('resize', resize); resize();
 const sceneFog = new THREE.FogExp2(new THREE.Color().setRGB(.64, .73, .86, THREE.LinearSRGBColorSpace), .005);
-const bgSpace = new THREE.Color(0x03060c), bgSky = new THREE.Color(0xa9b9cb), bg = new THREE.Color(), snowWhite = new THREE.Color(0xd5dbe2);
+const bgSpace = new THREE.Color(0x03060c), bgSky = new THREE.Color(0xa9b9cb), bg = new THREE.Color();
 let last = performance.now(), winterV = 1;
 // Keep the frame rate up: drop the render resolution when frames run long, raise it again when there's headroom.
 let FDT = 1 / 60, dprNow = Math.min(devicePixelRatio, phone() ? 2 : 1.75), qT = 0, qN = 0, qSum = 0;
@@ -2192,11 +1992,8 @@ function frame(now) {
   keyLight.target.position.copy(cam.target);
   winterV = lerp(winterV, state.winter, .08);
   uni.uWinter.value = winterV; uni.uSnowLine.value = lerp(3400, 1300, winterV); uni.uFrost.value = .15 * winterV;
-  for (const r of roofMats) r.m.color.copy(r.base).lerp(snowWhite, .55 * winterV);
   const du = terrainMat.uniforms.uDetOn; if (terrainMat.uniforms.det.value) du.value = Math.min(1, du.value + dt * 1.5);
   if (state.packMesh) { const f = state.packMesh.material.uniforms.uFade; f.value = Math.min(1, f.value + dt * 1.2); }
-  landmarkGroup.visible = !city && cam.dist < 60;
-  updateTrees(state.trees);
   if (alt < 2500 && !city) { scene.fog = sceneFog; sceneFog.density = .55 / (90 + alt * 4); } else scene.fog = null;
   if (city && photo.tiles) { camera.updateMatrixWorld(); photo.tiles.update(); if ((clock.t * 4 | 0) % 4 === 0) updateCredit(); }
   cloudShell.material.uniforms.uOn.value = lerp(cloudShell.material.uniforms.uOn.value, state.clouds, .1);
@@ -2227,7 +2024,7 @@ const ctx = {
 };
 async function loadFeatures() {
   const only = new URLSearchParams(location.search).get('only');    // ?only=water,life for testing one feature
-  const names = ['buildings', 'water', 'life'].filter(n => !only || only.split(',').includes(n) || n === 'buildings');
+  const names = ['buildings', 'water', 'life', 'landmarks', 'trees'].filter(n => !only || only.split(',').includes(n) || n === 'buildings');
   await Promise.all(names.map(async n => {
     try {
       const mod = await import(`./js/${n}.js`);
@@ -2276,7 +2073,7 @@ function loadHeight(url) {
     await loadFeatures();
     ctx.geo = geo;
     HF = hm.f; terrainMat.uniforms.map.value = region; terrainMat.uniforms.ibk.value = ibk; terrainMat.uniforms.hmap.value = hm.t;
-    buildTerrain(); buildSprites(); buildLandmarks(); buildJourney(geo, (family.places || []).filter(f => isFinite(f.lat) && isFinite(f.lon))); buildDots();
+    buildTerrain(); buildSprites(); buildJourney(geo, (family.places || []).filter(f => isFinite(f.lat) && isFinite(f.lon))); buildDots();
     requestAnimationFrame(frame);
     $('loading').classList.add('gone');
     if (DEBUG) window.__dbg = { set: (la, lo, d, t, h) => { token.dead = true; token = { dead: false }; state.orbit = 0; state.veil = 0; endExplore(); copyRig(tcam, view(la, lo, d, t, h)); }, cam, tcam, explore, backToTour, fitRig, flight: debugFlight, cdbg: { ROUTES, item, pathPts, openArea, fitCamera, poseCamera }, view, go, state, usePack, clock, setPaused, POI, scene, features, ctx, xp: { exploreMin, exploreTiltMax, placePill } };

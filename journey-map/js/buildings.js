@@ -473,6 +473,8 @@ export default function create(ctx) {
   const Q = v => Math.max(-32767, Math.min(32767, Math.round(v * 16)));
 
   async function buildBuildings(buf, meta) {
+    // footprints a hand-built landmark replaces (js/landmarks.js) are skipped; its masks must be loaded first
+    const lmMask = ctx.landmarksReady ? await ctx.landmarksReady.then(() => ctx.landmarkMask, () => null) : null;
     const u = new Uint16Array(buf), s16 = new Int16Array(buf), N = u.length, v3 = meta.v >= 3, skipSmall = phone();
     // geometry is cut into ~2.5 km chunks, each built round its own origin: frustum and distance culling then drop most of it
     // (in the main and the shadow pass), and local coordinates stay small. Each chunk has a second, 'minor' mesh for what
@@ -524,6 +526,7 @@ export default function create(ctx) {
       cx /= n; cy /= n; area = Math.abs(area) / 2;
       if (skipSmall && !part && area < 90) continue;
       const lat = meta.oy + cy / meta.ky, lon = meta.ox + cx / meta.kx;
+      if (lmMask && lmMask(lat, lon)) continue;
       chunkFor(cx, cy);
       // local frame in true metres around the centroid (east, north, up)
       const base = meshKm(lat, lon);
@@ -953,6 +956,10 @@ export default function create(ctx) {
     }
     return srt.depthTexture;
   }
+  // other features' meshes (landmarks) receive and cast the same shadow: they share these uniforms, and their uShadowM is
+  // set here whenever the map is re-rendered
+  const shadowU = { uShadow: { value: SHADOWS ? shadowTex() : null }, uShadowOn: { value: 0 }, uShadowTexel: { value: 1 } }, shadowMeshes = new Set();
+  ctx.shadow = { glsl: SHADOW_GLSL, layer: SHADOW_LAYER, uniforms: shadowU, matrix: sM, meshes: shadowMeshes };
   const camL = new V3();
   function update(dt) {
     const mesh = ctx.state.packMesh, mine = mesh && mesh.userData.chunks;
@@ -966,7 +973,7 @@ export default function create(ctx) {
     sOn += (want - sOn) * Math.min(1, dt * 3);
     const on = mine && srt ? sOn * mesh.material.uniforms.uFade.value : 0;
     if (mine) mesh.material.uniforms.uShadowOn.value = on;
-    recvMat.uniforms.uShadowOn.value = on;
+    recvMat.uniforms.uShadowOn.value = on; shadowU.uShadowOn.value = on;
     recv.visible = sOn > .01 && !!srt && !ctx.city;
     if (!want) return;
     const half = clamp(cam.dist * 1.35, .45, 3), T = cam.target;
@@ -982,6 +989,8 @@ export default function create(ctx) {
     const texel = half * 2000 / SM;
     for (const u of [mesh.material.uniforms, recvMat.uniforms]) { u.uShadow.value = srt.depthTexture; u.uShadowTexel.value = texel; }
     for (const c of mesh.userData.chunks) c.material.uniforms.uShadowM.value.copy(sM).multiply(c.matrixWorld);
+    shadowU.uShadow.value = srt.depthTexture; shadowU.uShadowTexel.value = texel;
+    for (const m of shadowMeshes) m.material.uniforms.uShadowM.value.copy(sM).multiply(m.matrixWorld);
     drape(T, half * .97);
     recvMat.uniforms.uShadowM.value.copy(sM).multiply(recv.matrixWorld);
   }

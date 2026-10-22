@@ -38,13 +38,26 @@ the file directly from disk won't load the map data).
   Snow sits on the pitched roofs in winter.
 - 20 m terrain relief along the routes (Mapzen/AWS terrarium, zoom 13) baked
   into per-leg relief maps, so ridges and gullies light correctly up close.
-- Snowy conifer forests: about 80,000 trees per leg, placed where the 10 m
-  imagery shows forest below the tree line, densest along the track and around
-  each stop.
-- Hand-built landmark models: Frauenkirche, Neues Rathaus, Alter Peter and
+- Trees by species and place: slender Norway spruce and silver fir with snow
+  on their tiers, Scots pine in the Nuremberg Reichswald, bare larches on sunny
+  Alpine slopes, and bare lime, beech, oak, maple, chestnut, birch, poplar and
+  willow in the towns, parks, avenues and along the rivers, each a trunk and
+  limbs inside a fine, frosted twig crown. Forests come from ESA WorldCover tree
+  cover, conifer or broadleaf from the summer near-infrared imagery, and the
+  town and park trees from OpenStreetMap, at their real heights.
+- Close to the camera each forest point grows into a small stand of trees;
+  further out the trees get simpler, so the forests stay light on phones.
+- Hand-built landmarks at their true size on their real footprints, in place of
+  the plain blocks there: Frauenkirche, Neues Rathaus, Alter Peter and
   St. Michael in Munich; Dom St. Jakob, Hofkirche, Goldenes Dachl and Bergisel
   in Innsbruck; Kaiserburg, St. Lorenz and the Frauenkirche in Nuremberg;
-  Neuschwanstein, Hohenschwangau, the Wieskirche and Kufstein fortress.
+  Neuschwanstein, Hohenschwangau, the Wieskirche and Kufstein fortress. Brick,
+  sandstone, plaster, copper, slate and tile surfaces with tracery windows and
+  clocks, lit and shadowed like the other buildings; the castles stand on their
+  rocks again (`tools/lm_footprints.py` picks the outlines).
+- The Munich Frauenkirche in detail: the 109 m brick hall under its huge roof,
+  tall lancet windows between flat strips, the polygonal choir, and the two
+  99 m towers with clocks, octagonal belfries and green copper domes.
 - Phone layout: the camera frames the action in the space between the header
   and the card, and wide shots pull back further on narrow screens.
 
@@ -120,6 +133,8 @@ day card can point to `journey-map/#day4`, for example.
 - Elevation: Mapzen / AWS Terrain Tiles (terrarium encoding).
 - Globe: NASA Blue Marble.
 - Rivers, rail and roads: Natural Earth 1:10m.
+- Tree cover: ESA WorldCover 2021 (10 m). Trees, tree rows, woods and parks:
+  OpenStreetMap contributors, via Overture Maps.
 
 `tools/` has the Python scripts that built `assets/` (scene search, mosaic,
 elevation, routing on the Natural Earth rail and road network, and valley
