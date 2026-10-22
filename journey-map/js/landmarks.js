@@ -17,8 +17,8 @@ export default function create(ctx) {
     frauenkircheMuc: 'muc', rathaus: 'muc', alterPeter: 'muc', stMichael: 'muc', altesRathaus: 'muc', heiliggeist: 'muc', mariensaeule: 'muc',
     buergersaal: 'muc', asamkirche: 'muc',
     domIbk: 'ibk', hofkirche: 'ibk', goldenesDachl: 'ibk', bergisel: 'ibk', helbling: 'ibk', stadtturm: 'ibk', ottoburg: 'ibk', hofburg: 'ibk',
-    kaiserburg: 'nue', stLorenz: 'nue', frauenkircheNue: 'nue',
-    neuschwanstein: 'alps', hohenschwangau: 'alps', kufstein: 'alps', wieskirche: 'alps',
+    kaiserburg: 'nue', stLorenz: 'nue', frauenkircheNue: 'nue', stSebald: 'nue', schoenerBrunnen: 'nue',
+    neuschwanstein: 'alps', hohenschwangau: 'alps', kufstein: 'alps', wieskirche: 'alps', marienbruecke: 'alps',
   };
 
   /* ---------- footprints and masks ---------- */
@@ -159,7 +159,8 @@ export default function create(ctx) {
         // on the crowns and lying in the clearings
         vec3 p=vL; float cr=vnoise(p*.21), cr2=vnoise(p*.63+3.), gap=smoothstep(.6, .78, vnoise(p*.045+11.));
         col=base*(.5+.65*cr)*mix(1., .8+.4*cr2, det*.5+.5);
-        snowK=(gap*.7+smoothstep(.62, .88, cr2)*.3*(1.-gap))*smoothstep(.25, .75, nyT);
+        snowK=(gap*.6+smoothstep(.62, .88, cr2)*.28*(1.-gap))*smoothstep(.25, .75, nyT);
+        if(flags>.5) snowK*=flags/255.;                 // f: 1..255 thins the snow (dense forest on a steep slope)
       }
       // ---------------- windows (walls), laid out in bays from the facade coordinates ----------------
       float winO=0.;
@@ -833,7 +834,8 @@ export default function create(ctx) {
       },
       // a castle crag: the drawn terrain inside a convex ring raised by lift(x, y) (true m; the height map is too coarse
       // for these rocks), as terraces of rock that hold snow on the gentle parts, with a rocky skirt round the edge down
-      // into the terrain. Build the castle's buildings at K.groundAt(x, y) + lift(x, y).
+      // into the terrain. Build the castle's buildings at K.groundAt(x, y) + lift(x, y). o.skirtM: another material for the
+      // skirt (a wooded hill under a rock top, or rock under a wooded top), o.flare / o.rough: its lean and roughness.
       mound(r, lift, m, o = {}) {
         const step = o.step || (lite ? 7 : 5), rings = [];
         let ring = [];
@@ -862,7 +864,7 @@ export default function create(ctx) {
         const s0 = B.p.length / 3;
         for (const p of inner) vtx(p[0], p[1], Z(p), 0, 0, 1, 0, 0);
         for (const t of THREE.ShapeUtils.triangulateShape(pts, [])) B.ix.push(s0 + t[0], s0 + t[1], s0 + t[2]);
-        K.rock(ring, (x, y) => Z([x, y]) - .3, m, { flare: o.flare ?? .45, rough: o.rough ?? 2.4, step: o.skirtStep || 4 });
+        K.rock(ring, (x, y) => Z([x, y]) - .3, o.skirtM || m, { flare: o.flare ?? .45, rough: o.rough ?? 2.4, step: o.skirtStep || 4 });
         return Z;
       },
       // a castle's crag in one call: lift = H inside an ellipse (centre c, half axes ax, ay, turned deg), easing to 0 by

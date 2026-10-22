@@ -457,7 +457,8 @@ const cloudShell = new THREE.Mesh(new THREE.SphereGeometry(R + 9, 192, 96), new 
       float band=.55+.25*sin(ll.x*3.);
       vec2 d=vec2((ll.y*180./PI-11.2)*.67,(ll.x*180./PI-48.2));
       float clear=smoothstep(2.5,7.,length(d));
-      float a=smoothstep(.5,.78,w*band+.18)*(.25+.75*clear);
+      vec2 us=vec2((ll.y*180./PI+96.3)*.3,(ll.x*180./PI-39.8)*.8);     // thinner over the US hops (Denver, Wichita, Chicago)
+      float a=smoothstep(.5,.78,w*band+.18)*(.25+.75*clear)*(.3+.7*smoothstep(2.,4.5,length(us)));
       a*=smoothstep(250.,900.,uAlt)*uOn;
       float lit=.35+.75*max(dot(n,normalize(uSun)),0.);
       gl_FragColor=vec4(vec3(1.)*lit,a*.85); 
@@ -932,11 +933,11 @@ function drawSnow(dt, amt) {
 // Two rigs. tcam is where the journey wants the camera: flights, legs, tours and idle orbits all write it.
 // cam is what is drawn (and what features see as ctx.cam). They match, except while the viewer explores:
 // then cam follows their hands, the journey holds still, and "Back to tour" blends cam onto the live tcam.
-// sx (px, optional) slides the target sideways on screen, for shots that keep clear of the story card.
-const cam = { target: llv(37.65, -97.43), dist: 9000, heading: 0, tilt: 0, sx: 0 };
-const tcam = { target: cam.target.clone(), dist: 9000, heading: 0, tilt: 0, sx: 0 };
-const rig = (o = {}) => ({ target: new V3(), dist: 1, heading: 0, tilt: 0, sx: 0, ...o });
-function copyRig(o, s) { o.target.copy(s.target); o.dist = s.dist; o.heading = s.heading; o.tilt = s.tilt; o.sx = s.sx || 0; return o; }
+// sx, sy (px, optional) slide the target sideways / down on screen, for shots that keep clear of the story card.
+const cam = { target: llv(37.65, -97.43), dist: 9000, heading: 0, tilt: 0, sx: 0, sy: 0 };
+const tcam = { target: cam.target.clone(), dist: 9000, heading: 0, tilt: 0, sx: 0, sy: 0 };
+const rig = (o = {}) => ({ target: new V3(), dist: 1, heading: 0, tilt: 0, sx: 0, sy: 0, ...o });
+function copyRig(o, s) { o.target.copy(s.target); o.dist = s.dist; o.heading = s.heading; o.tilt = s.tilt; o.sx = s.sx || 0; o.sy = s.sy || 0; return o; }
 // Point camera c (the real one, or a scratch copy used for framing) at rig r. Returns its height in km.
 function poseCamera(c, r) {
   const f = enu(r.target), h = r.heading * D2R, t = r.tilt * D2R;
@@ -951,14 +952,14 @@ function poseCamera(c, r) {
   const alt = Math.max(.05, c.position.length() - R);
   c.near = clamp(Math.min(alt, r.dist) * .03, .004, 2000);
   c.far = Math.sqrt(alt * (2 * R + alt)) + 600 + r.dist;
-  if (c.view) c.view.offsetX = -(r.sx || 0);
+  if (c.view) { c.view.offsetX = -(r.sx || 0); c.view.offsetY = viewOff - (r.sy || 0); }
   c.updateProjectionMatrix(); c.updateMatrixWorld();
   return alt;
 }
 function applyCam() { return poseCamera(camera, cam); }
 // Shift the picture so the focus sits in the open area between the header and the card,
 // and work out how much further back wide shots need to sit on a narrow screen.
-let viewKey = '', fit = 1, fitClose = 1;
+let viewKey = '', fit = 1, fitClose = 1, viewOff = 0;
 function updateViewOffset() {
   const w = innerWidth, h = innerHeight;
   const cardTop = document.getElementById('dock').firstElementChild.getBoundingClientRect().top;
@@ -966,7 +967,7 @@ function updateViewOffset() {
   const cy = (topRes + cardTop) / 2, off = Math.round(h / 2 - cy);
   const key = w + 'x' + h + ':' + off;
   if (key === viewKey) return;
-  viewKey = key;
+  viewKey = key; viewOff = off;
   camera.setViewOffset(w, h, 0, off, w, h);
   const tf = Math.tan(camera.fov * D2R / 2), visH = Math.max(120, cardTop - topRes);
   const ref = tf * 540 / 800, cur = Math.min(tf * visH / h, tf * w / h);
@@ -994,7 +995,7 @@ function anim(dur, fn) {
 // a is captured now; b's heading and tilt are read as it goes.
 function hop(a, b) {
   const an = a.target.clone().normalize(), ra = a.target.length(), bn = b.target.clone().normalize(), rb = b.target.length();
-  const ang = an.angleTo(bn), gkm = ang * R, d0 = a.dist, d1 = b.dist, h0 = a.heading, t0 = a.tilt, s0 = a.sx || 0;
+  const ang = an.angleTo(bn), gkm = ang * R, d0 = a.dist, d1 = b.dist, h0 = a.heading, t0 = a.tilt, s0 = a.sx || 0, y0 = a.sy || 0;
   const peak = Math.max(d0, d1, gkm * 1.1 * fitClose);
   const bump = Math.log(peak) - Math.max(Math.log(d0), Math.log(d1)), span = Math.log(peak / Math.min(d0, d1));
   const axis = new V3().crossVectors(an, bn); if (axis.lengthSq() < 1e-12) axis.set(0, 1, 0); axis.normalize();
@@ -1006,7 +1007,7 @@ function hop(a, b) {
     o.dist = Math.exp(lerp(Math.log(d0), Math.log(d1), e) + Math.max(0, bump) * arc);
     o.heading = lerpAngle(h0, b.heading, e);
     o.tilt = lerp(t0, b.tilt, e) * (1 - .75 * arc * clamp(bump / 1.5, 0, 1));
-    o.sx = lerp(s0, b.sx || 0, e);
+    o.sx = lerp(s0, b.sx || 0, e); o.sy = lerp(y0, b.sy || 0, e);
     return arc;
   } };
 }
@@ -1365,7 +1366,7 @@ const POI = {
   lorenz: { lat: 49.4509, lon: 11.0786, t: 'St. Lorenz', x: 'Twin Gothic spires, about 80 m. Inside hangs Veit Stoss’s carved Angelic Salutation of 1517–18.' },
   hohensch: { d: 1.2, lat: 47.5553, lon: 10.7364, t: 'Hohenschwangau', x: 'Ludwig II grew up in this yellow castle, rebuilt by his father Maximilian II in the 1830s.' },
   neusch: { d: 1.6, lat: 47.5576, lon: 10.7498, t: 'Neuschwanstein', x: 'Begun in 1869 and never finished; Ludwig lived here only 172 days. It inspired Disney’s Sleeping Beauty Castle.' },
-  marienbr: { d: 1.2, lat: 47.5562, lon: 10.7490, t: 'Marienbrücke', x: 'The classic castle view is from this bridge over the Pöllat gorge, but it is often closed in winter for ice and snow.' },
+  marienbr: { d: 1.2, lat: 47.5550, lon: 10.7494, t: 'Marienbrücke', x: 'The classic castle view is from this bridge over the Pöllat gorge, but it is often closed in winter for ice and snow.' },
 };
 const poiEl = document.getElementById('poi');
 let pins = [];
@@ -1667,9 +1668,9 @@ function buildJourney(geo, family = []) {
     if (o.focus) {
       const f = o.focus.p, turn = o.focus.side === 'On your right' ? 70 : o.focus.side === 'On your left' ? -70 : 0;
       draw(path, s0);
-      if (!await flyTo(view(f.lat, f.lon, f.d || 2.6, 60, h0 + turn))) return false;
+      if (!await flyTo(stopView(f, h0 + turn, f.d || 2.6, 60))) return false;
       if (!await enterCity(f)) return false;
-      if (!await storyHold(f, o.focus.side, dt => { tcam.heading += 3 * dt; })) return false;
+      if (!await storyHold(f, o.focus.side, dt => { tcam.heading += (reduceMotion ? 0 : 3) * dt; })) return false;
       state.progress = .3;
       if (!await exitCity()) return false;
       draw(path, s0);
@@ -1765,6 +1766,14 @@ function buildJourney(geo, family = []) {
     await flyTo({ ...home, dist: Math.min(home.dist, tcam.dist) }, 2);
   }
 }
+// A tour stop from 0.55 km (or p.d): the sight's foot sits low in the open area, beside the story card on desktop and
+// under it on phones, as a pure screen shift, so the slow turn while the story is read keeps it in place.
+function stopView(p, heading, d = p.d || .55, tilt = 66) {
+  const v = view(p.lat, p.lon, d, tilt, heading), A = openArea(state.stories);
+  v.sx = (A.x0 + A.x1 - innerWidth) / 2;
+  v.sy = lerp(A.y0, A.y1, .6) - (innerHeight / 2 - viewOff);
+  return v;
+}
 // Visit each stop in turn with its story, then settle back on the view of the whole place.
 async function tour(stops, base, rate = 1, partOfLeg = false) {
   hideVehicles(); setPins(stops);
@@ -1772,9 +1781,9 @@ async function tour(stops, base, rate = 1, partOfLeg = false) {
   if (!await enterCity(base)) return false;
   for (let i = 0; i < stops.length; i++) {
     const p = stops[i];
-    if (!await flyTo(view(p.lat, p.lon, p.d || .55, 66, (tcam.heading + 35) % 360), 2)) return false;
+    if (!await flyTo(stopView(p, (tcam.heading + 35) % 360), 2)) return false;
     state.progress = (i + 1) / stops.length * (partOfLeg ? .15 : 1) + (partOfLeg ? .45 : 0);
-    if (!await storyHold(p, `Stop ${i + 1} of ${stops.length}`, dt => { tcam.heading += 3.6 * dt; })) return false;
+    if (!await storyHold(p, `Stop ${i + 1} of ${stops.length}`, dt => { tcam.heading += (reduceMotion ? 0 : 3.6) * dt; })) return false;
   }
   showPoi(null);
   if (!await flyTo(rg(base), 2)) return false;

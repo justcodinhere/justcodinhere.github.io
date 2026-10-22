@@ -74,6 +74,9 @@ LM = {
   'kaiserburg':      dict(near=25, at=(49.45780, 11.07750), main='Sinwellturm', skipcls=['house', 'apartments', 'retail', 'semidetached_house', 'garage'], poly=[(-215, -38), (-60, -40), (-20, -10), (70, 40), (65, 75), (10, 80), (-60, 55), (-150, 48), (-215, 35)]),
   'stLorenz':        dict(at=(49.45100, 11.07866), names=['St. Lorenz']),
   'frauenkircheNue': dict(at=(49.45405, 11.07820), names=['Frauenkirche']),
+  'stSebald':        dict(at=(49.45528, 11.07645), names=['St. Sebald']),
+  'schoenerBrunnen': dict(at=(49.4542306, 11.0770556), none=1),                                  # the fountain on the Hauptmarkt
+  'marienbruecke':   dict(at=(47.5549600, 10.7493780), none=1),                                  # the iron bridge over the Pöllat gorge
   'wieskirche':      dict(at=(47.68050, 10.90050), names=['Wieskirche', 'Wallfahrtsmuseum'], extra=[(42.6, 3.7)]),
 }
 

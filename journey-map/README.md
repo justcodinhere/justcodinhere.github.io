@@ -90,6 +90,18 @@ the file directly from disk won't load the map data).
   Zaha Hadid's tower and head, the inrun, the snowy landing hill and the
   stands, on a wooded hill modelled back where the elevation data had smoothed
   it away.
+- Nuremberg in red sandstone: the Kaiserburg back on its ridge with the Palas,
+  the double chapel and Heidenturm, the round Sinwellturm under its tall helm,
+  the half-timbered houses round the courts, the Kaiserstallung's huge roof of
+  dormers between the Fünfeckturm and the turreted Luginsland; the twin towers
+  of St. Lorenz and St. Sebald with their rings of gables round copper spires,
+  the rose window and the soaring hall choirs; the Frauenkirche's stepped gable
+  and Männleinlaufen clock, and the gilded Schöner Brunnen on the Hauptmarkt.
+- The Allgäu and Tyrol: Neuschwanstein's white Palas, slender towers and
+  red-brick gatehouse on its crag, the Marienbrücke over a rock gorge with its
+  frozen waterfall, ochre Hohenschwangau on its wooded hill, Kufstein fortress
+  with the great round Kaiserturm high on its rock, and the white oval
+  Wieskirche alone in the meadows.
 - Phone layout: the camera frames the action in the space between the header
   and the card, and wide shots pull back further on narrow screens.
 

@@ -301,24 +301,24 @@ export default {
   // hill falling north in its hollow.
   bergisel(K) {
     const C = { m: 10, c: '#c3c5c3', seed: .2 }, C2 = { m: 10, c: '#a9aca9', seed: .6 }, GL = { m: 8, c: '#2e3946' }, STEEL = { m: 10, c: '#8e9397', seed: .35 };
-    const SNOW = { m: 11, c: '#e9edf2' }, HILL = { m: 17, c: '#3a4535' }, STAND = { m: 10, c: '#a2a6a5', seed: .9 };
+    const SNOW = { m: 11, c: '#e9edf2' }, HILL = { m: 17, c: '#343e30' }, STAND = { m: 10, c: '#a2a6a5', seed: .9 };
     const ax = 96.4 * D, ux = [Math.cos(ax), Math.sin(ax)], vx = [-ux[1], ux[0]];                 // the jump's axis (north, a little west) and across it (west)
     const P = (s, t) => [ux[0] * s + vx[0] * t - 1.2, ux[1] * s + vx[1] * t + 1.5];                 // s along the axis from the head's front, t across
     const sm = t => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
     const lerpT = (T, s) => { if (s <= T[0][0]) return T[0][1]; for (let i = 1; i < T.length; i++) if (s <= T[i][0]) { const [s0, z0] = T[i - 1], [s1, z1] = T[i], k = (s - s0) / (s1 - s0); return z0 + (z1 - z0) * k; } return T[T.length - 1][1]; };
     // the hill along the axis (m over the drawn ground): plateau round the tower, the knoll, landing slope, transition, outrun
-    const AX = [[-200, 0], [-150, 14], [-110, 40], [-75, 58], [-50, 62], [30, 62], [50, 60.5], [62, 58], [70, 55.5], [84, 48.5], [107, 34], [132, 18], [154, 7], [174, 1.5], [194, .35], [300, .35]];
+    const AX = [[-240, 0], [-180, 12], [-130, 36], [-85, 56], [-50, 62], [30, 62], [50, 60.5], [62, 58], [70, 55.5], [84, 48.5], [107, 34], [132, 18], [154, 7], [174, 1.5], [194, .35], [300, .35]];
     const H = s => lerpT(AX, s), tc = s => -6.9 * sm((s - 62) / 138), half = s => s < 62 ? 3 : 9 + 10 * sm((s - 62) / 120);
     const lift = (s, t) => {
       const d = Math.abs(t - tc(s)), h = H(s), hw = half(s);
       const side = h + (s > 55 && s < 200 ? 2.5 + 7 * sm((d - hw) / 40) * sm((180 - s) / 60) : 0);   // the woods stand higher than the landing hill
-      const lat = 1 - sm((d - 48) / 105);
+      const lat = 1 - sm((d - 40) / 150);
       return d < hw ? h : Math.max(.35 * sm((300 - s) / 10) * (1 - sm((d - 40) / 8)), (h + (side - h) * sm((d - hw) / 6)) * lat);
     };
     const zAt = (s, t) => { const p = P(s, t), l = lift(s, t); return K.groundAt(p[0], p[1]) + (l > .3 ? l : l - 1.2 * (1 - l / .3)); };
     // the hill: rows across the axis, finer round the landing hill; inside the landing strip it sits a little lower
-    const SS = []; for (let s = -200; s <= 300; s += K.lite ? 14 : 10) SS.push(s);
-    const TT = [-165, -130, -100, -75, -55, -40, -29, -21, -15, -10, -5, 0, 5, 10, 15, 21, 29, 40, 55, 75, 100, 130, 165];
+    const SS = []; for (let s = -240; s <= 300; s += K.lite ? 14 : 10) SS.push(s);
+    const TT = [-200, -160, -125, -95, -70, -52, -38, -28, -21, -15, -10, -5, 0, 5, 10, 15, 21, 28, 38, 52, 70, 95, 125, 160, 200];
     const G = SS.map(s => TT.map(t => { const p = P(s, t + tc(s)), d = Math.abs(t), inner = d < half(s) - .8; return [p[0], p[1], zAt(s, t + tc(s)) - (inner ? .7 : 0)]; }));
     for (let i = 0; i < SS.length - 1; i++) for (let k = 0; k < TT.length - 1; k++) {
       const A = G[i][k], B = G[i][k + 1], Cc = G[i + 1][k + 1], Dd = G[i + 1][k];
